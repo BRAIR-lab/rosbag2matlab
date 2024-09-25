@@ -130,6 +130,7 @@ classdef Bag_Analyzer < handle
                     end
                
                 otherwise
+                    new_data = [];
                     disp("Unsupported msg type.")
             end
         end
