@@ -162,13 +162,15 @@ classdef Bag_Analyzer < handle
         end
         
         % Synchronize Topics
-        function synchronization(obj, method)
+        function synchronization(obj, resampling_period)
             for i = 1:obj.n_topics
                 for j = 1:obj.n_topics
-                    if i < j    
+                    if i < j
                         [obj.topic_ts{i}, obj.topic_ts{j}] = synchronize(obj.topic_ts{i}, obj.topic_ts{j}, ...
-                                                                        method,'KeepOriginalTimes',true, ...
+                                                                        'uniform', 'Interval', resampling_period, ...
+                                                                        'KeepOriginalTimes',true, ...
                                                                         'InterpMethod', 'zoh');
+                        
                     end
                 end
             end
