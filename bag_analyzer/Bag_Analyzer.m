@@ -14,17 +14,12 @@ classdef Bag_Analyzer < handle
         %% Topics Information
         topic_names
         n_topics
-        topic_cell
-        msg_cell
-
-        % Time & Msgs
-        topic_time
-        topic_data
         msg_type
         n_msgs
 
         %% Timeseries
-        topic_ts
+        topics_ts
+        synchronized_topics
     end
 
     %% Methods
@@ -45,139 +40,116 @@ classdef Bag_Analyzer < handle
 
             % Extract Topics & Msgs
             obj.extractMsgs();
+        end
 
-            % Extract Data
-            obj.ros2matlab();
+        function msg_data = extractData(obj, msg_cell)
+            
+            switch msg_cell{1}.MessageType
+                case 'sensor_msgs/Image'
+                    % Extract Image
+                    for i = 1:length(msg_cell)
+                        msg_data(:, :, :, i) = rosReadImage(msg_cell{i});
+                    end
+                 
+                case 'std_msgs/Float32MultiArray'
+                    % msg_data = msg_cell;
+                    for i = 1:length(msg_cell)
+                        msg_data(:, i) = double(msg_cell{i}.Data);
+                    end
 
-            % Get Timeseries
-            obj.ros2ts();
+                case 'std_msgs/Float64MultiArray'
+                    % msg_data = msg_cell;
+                    for i = 1:length(msg_cell)
+                        msg_data(:, i) = double(msg_cell{i}.Data);
+                    end
+                
+                case 'geometry_msgs/TransformStamped'
+                    for i = 1:length(msg_cell)
+                        se3_data = msg_cell{i}.Transform;
+                        msg_data(:, i) = [se3_data.Translation.X; se3_data.Translation.Y; se3_data.Translation.Z;
+                                        se3_data.Rotation.W; se3_data.Rotation.X; se3_data.Rotation.Y; se3_data.Rotation.Z];
+                    end
+
+                 case 'vicon_bridge/Markers'
+                     % msg_data = msg_cell;
+                    % for i = 1:length(msg_cell)
+                    %     se3_data = msg_cell{i}.Transform;
+                    %     msg_data(:, i) = [se3_data.Translation.X; se3_data.Translation.Y; se3_data.Translation.Z;
+                    %                     se3_data.Rotation.W; se3_data.Rotation.X; se3_data.Rotation.Y; se3_data.Rotation.Z];
+                    for i = 1:length(msg_cell)
+                        n_markers = length(msg_cell{i}.Markers_);
+                        % Fill vector
+                        markers_pos = [];
+                        for j = 1:n_markers
+                            markers_pos = [markers_pos; msg_cell{i}.Markers_(j).Translation.X; msg_cell{i}.Markers_(j).Translation.Y; msg_cell{i}.Markers_(j).Translation.Z];
+                        end
+                        msg_data(:, i) = markers_pos./1000;
+                    end
+                    % end
+                otherwise
+                    msg_data = msg_cell;
+            end
         end
 
         % Extract Topics & Msgs
         function extractMsgs(obj)
             for i = 1:obj.n_topics
                 % Topic
-                obj.topic_cell{i} = select(obj.bag_obj, 'Topic', obj.topic_names{i});
+                topic_cell = select(obj.bag_obj, 'Topic', obj.topic_names{i});
                 % msgs
-                obj.msg_cell{i} = readMessages(obj.topic_cell{i},'DataFormat','struct');
+                msg_cell = readMessages(topic_cell,'DataFormat','struct');
                 % Time
-                obj.topic_time{i} = obj.topic_cell{i}.MessageList.Time - obj.start_time;
+                topic_time = topic_cell.MessageList.Time - obj.start_time;
                 % Type
-                obj.msg_type{i} = obj.msg_cell{i}{1}.MessageType;
+                obj.msg_type{i} = msg_cell{1}.MessageType;
                 % N° of Msgs
-                obj.n_msgs(i) = length(obj.msg_cell{i});
+                obj.n_msgs(i) = length(msg_cell);
+                % Build Timeseries
+                obj.topics_ts{i} = struct('Time', topic_time', 'Data', obj.extractData(msg_cell));
             end
         end
 
-        % Useful function from ros2cell
-        function [new_data, skip_flag] = ros2cell(obj, data, msg_type)
+        % Synchronization
+        function [merged_time, merged_dataset] = synchronization(obj, resampling_period)
+            method = 'previous'; % hardcoded for the image 
 
-            % Different Operation w.r.t. type of msg
-            switch msg_type
-                case 'sensor_msgs/Image'
-                    new_data = rosReadImage(data);
-                    skip_flag = false;
-    
-                case 'std_msgs/Float32MultiArray'
-                    new_data = data.Data;
-                    skip_flag = false;
-                   
-                case 'std_msgs/Float64MultiArray'
-                    new_data = data.Data;
-                    skip_flag = false;
-                
-                case 'geometry_msgs/TransformStamped'
-                    % Translation (Cartesian)
-                    new_data.Translation    =       [data.Transform.Translation.X; 
-                                                    data.Transform.Translation.Y;
-                                                    data.Transform.Translation.Z];
-    
-                    % Rotation (Quaternion)
-                    new_data.Rotation       =       [data.Transform.Rotation.W;
-                                                    data.Transform.Rotation.X; 
-                                                    data.Transform.Rotation.Y;
-                                                    data.Transform.Rotation.Z];
-                   
-                    skip_flag = false;
-                case 'vicon_bridge/Markers'
-                    n_markers = length(data.Markers_);
+            % Merged Time Definition
+            merged_time = 0:resampling_period:obj.bag_duration;
 
-                    % Fill vector
-                    new_data = [];
-                    for i = 1:n_markers
-                        new_data = [new_data; data.Markers_(i).Translation.X; data.Markers_(i).Translation.Y; data.Markers_(i).Translation.Z];
-                    end
-                    skip_flag = false;
-               
-                otherwise
-                    new_data = [];
-                    % disp("Unsupported msg type.")
-                    skip_flag = true;
-            end
-        end
-
-        % Extract Data
-        function ros2matlab(obj)
+            % Interpolate
             for i = 1:obj.n_topics
-                for j = 1:obj.n_msgs(i)
-                    % Assign Data
-                    [obj.topic_data{i}{j}, skip_flag] = obj.ros2cell(obj.msg_cell{i}{j}, obj.msg_type{i});
-                    
-                    % % Skip to avoid useless iterations
-                    % if skip_flag
-                    %     break;
-                    % end
+                % Temporarirly skip for unsupported msg types
+                if length(obj.topics_ts{i}) ~= 1
+                    continue;
                 end
-            end
-        end
 
-        % Convert in Time Series
-        function ros2ts(obj)
-            for i = 1:obj.n_topics
-                switch obj.msg_type{i}
-                    case 'sensor_msgs/Image'
-                        % Convert in image matrix (4d array)
-                        for j = 1:length(obj.topic_data{i})
-                            imageMatrix(:, :, :, j) = obj.topic_data{i}{j};
+                % Merge Dataset
+                if obj.msg_type{i} == "sensor_msgs/Image"
+                    % Due to the unsupport of interp1() for 4d matrix,
+                    % I tried this alternative solution:
+                    % Just reordering the samples index and after assign
+                    % it. Of course, we have to manage the NaN case.
+                    fake_data = (1:length(obj.topics_ts{i}.Time))';
+                    fake_dataset = interp1(obj.topics_ts{i}.Time', fake_data, ...
+                                                    merged_time', method);
+                    for j = 1:length(fake_dataset)
+                        if isnan(fake_dataset(j))
+                            % Fill Image with NaN
+                            merged_dataset{i}(:, :, :, j) = uint8(NaN*ones(size(obj.topics_ts{i}.Data(:, :, :, 1))));
+                        else
+                            merged_dataset{i}(:, :, :, j) = obj.topics_ts{i}.Data(:, :, :, fake_dataset(j));
                         end
-                        % Time series object
-                        obj.topic_ts{i} = timeseries(imageMatrix, obj.topic_time{i}, ...
-                                                        "Name", obj.topic_names{i});
-
-                    case 'std_msgs/Float32MultiArray'
-                        obj.topic_ts{i} = timeseries(double(cell2mat(obj.topic_data{i})'), obj.topic_time{i}, ...
-                                                        "Name", obj.topic_names{i});
-        
-                    case 'std_msgs/Float64MultiArray'
-                        obj.topic_ts{i} = timeseries(double(cell2mat(obj.topic_data{i})'), obj.topic_time{i}, ...
-                                                        "Name", obj.topic_names{i});
-
-                    case 'geometry_msgs/TransformStamped'
-                        obj.topic_ts{i} = timeseries(cell2mat(struct2cell(cell2mat(obj.topic_data{i})'))', obj.topic_time{i}, ...
-                                                        "Name", obj.topic_names{i});
-                    
-                    case 'vicon_bridge/Markers'
-                        obj.topic_ts{i} = timeseries(cell2mat(obj.topic_data{i})', obj.topic_time{i}, ...
-                                                        "Name", obj.topic_names{i});
-                    
-                    otherwise
-                        obj.topic_ts{i} = timeseries(NaN*ones(size(obj.topic_time{i})), obj.topic_time{i});
-                end
-            end
-        end
-        
-        % Synchronize Topics
-        function synchronization(obj, resampling_period)
-            for i = 1:obj.n_topics
-                for j = 1:obj.n_topics
-                    if i ~= j
-                        [obj.topic_ts{i}, obj.topic_ts{j}] = synchronize(obj.topic_ts{i}, obj.topic_ts{j}, ...
-                                                                        'uniform', 'Interval', resampling_period, ...
-                                                                        'KeepOriginalTimes',true, ...
-                                                                        'InterpMethod', 'zoh');
-                        
                     end
+
+                    clear fake_data fake_dataset
+                else
+                    merged_dataset{i} = interp1(obj.topics_ts{i}.Time', obj.topics_ts{i}.Data', ...
+                                                    merged_time', method);
+
+                    % Transposing, I like more column notation
+                    merged_dataset{i} = merged_dataset{i}';
                 end
+
             end
         end
     
