@@ -14,7 +14,6 @@ classdef Bag_Analyzer < handle
         %% Topics Information
         topic_names
         n_topics
-        neff_topics
         topic_cell
         msg_cell
 
@@ -23,6 +22,9 @@ classdef Bag_Analyzer < handle
         topic_data
         msg_type
         n_msgs
+
+        %% Timeseries
+        topic_ts
     end
 
     %% Methods
@@ -38,7 +40,7 @@ classdef Bag_Analyzer < handle
             obj.bag_duration = obj.end_time - obj.start_time;
 
             % Topics Info
-            obj.topic_names = obj.bag_obj.AvailableTopics.Row;
+            obj.topic_names = obj.bag_obj.AvailableTopics.Row';
             obj.n_topics = length(obj.topic_names);
 
             % Extract Topics & Msgs
@@ -46,6 +48,9 @@ classdef Bag_Analyzer < handle
 
             % Extract Data
             obj.ros2matlab();
+
+            % Get Timeseries
+            obj.ros2ts();
         end
 
         % Extract Topics & Msgs
@@ -64,50 +69,22 @@ classdef Bag_Analyzer < handle
             end
         end
 
-        function initialized_ds = init_ds(obj, topic_id)
-            % Different Operation w.r.t. type of msg
-            switch obj.msg_type{topic_id}
-                case 'sensor_msgs/Image'
-                    initialized_ds = NaN*ones(size(obj.topic_data{topic_id}{1}));
-
-                case 'std_msgs/Float32MultiArray'
-                    initialized_ds = NaN*ones(length(obj.topic_data{topic_id}{1}), 1);
-                   
-                case 'std_msgs/Float64MultiArray'
-                    initialized_ds = NaN*ones(length(obj.topic_data{topic_id}{1}), 1);
-                
-                case 'geometry_msgs/TransformStamped'
-                    % Translation (Cartesian)
-                    initialized_ds.Translation    = NaN*ones(3, 1);
-    
-                    % Rotation (Quaternion)
-                    initialized_ds.Rotation       = NaN*ones(4, 1);
-
-                case 'vicon_bridge/Markers'
-                    n_markers = length(obj.topic_data{topic_id}{1});
-
-                    % Fill vector
-                    initialized_ds = NaN*ones(n_markers, 1);
-               
-                otherwise
-                    disp("Unsupported msg type.")
-            end
-        end
-
         % Useful function from ros2cell
-        function new_data = ros2cell(obj, data, msg_type)
-            % new_data = [];
+        function [new_data, skip_flag] = ros2cell(obj, data, msg_type)
 
             % Different Operation w.r.t. type of msg
             switch msg_type
                 case 'sensor_msgs/Image'
                     new_data = rosReadImage(data);
+                    skip_flag = false;
     
                 case 'std_msgs/Float32MultiArray'
                     new_data = data.Data;
+                    skip_flag = false;
                    
                 case 'std_msgs/Float64MultiArray'
                     new_data = data.Data;
+                    skip_flag = false;
                 
                 case 'geometry_msgs/TransformStamped'
                     % Translation (Cartesian)
@@ -120,6 +97,8 @@ classdef Bag_Analyzer < handle
                                                     data.Transform.Rotation.X; 
                                                     data.Transform.Rotation.Y;
                                                     data.Transform.Rotation.Z];
+                   
+                    skip_flag = false;
                 case 'vicon_bridge/Markers'
                     n_markers = length(data.Markers_);
 
@@ -128,10 +107,12 @@ classdef Bag_Analyzer < handle
                     for i = 1:n_markers
                         new_data = [new_data; data.Markers_(i).Translation.X; data.Markers_(i).Translation.Y; data.Markers_(i).Translation.Z];
                     end
+                    skip_flag = false;
                
                 otherwise
                     new_data = [];
-                    disp("Unsupported msg type.")
+                    % disp("Unsupported msg type.")
+                    skip_flag = true;
             end
         end
 
@@ -140,70 +121,58 @@ classdef Bag_Analyzer < handle
             for i = 1:obj.n_topics
                 for j = 1:obj.n_msgs(i)
                     % Assign Data
-                    obj.topic_data{i}{j} = obj.ros2cell(obj.msg_cell{i}{j}, obj.msg_type{i});
+                    [obj.topic_data{i}{j}, skip_flag] = obj.ros2cell(obj.msg_cell{i}{j}, obj.msg_type{i});
+                    
+                    % % Skip to avoid useless iterations
+                    % if skip_flag
+                    %     break;
+                    % end
                 end
             end
-
-            % Init neff_topics
-            obj.neff_topics = length(obj.topic_data);
         end
 
-        % Merge Dataset
-        function merged_dataset = merge_dataset(obj)
-            %% Merge Time
-            % Concatenate and Sort
-            total_time = [];
-            obj.neff_topics = length(obj.topic_data);
-        
-            % Append
-            for i = 1:obj.neff_topics
-                total_time = [total_time; obj.topic_time{i}];
-            end
-
-            % Sort and Merge
-            [merged_time, idxs] = sort(total_time);
-            merged_dataset.time = merged_time;
-            
-            %% Merge Dataset
-            % Init Merged Dataset
-            merged_dataset.data = cell(1, obj.neff_topics);
-
-            for(i = 1:obj.neff_topics)
-                merged_dataset.data{i}{1} = obj.init_ds(i);
-            end
-
-            %% Fill New Dataset
-            % Find Bounds
-            idx_bounds = [0];
-            for k = 1:obj.n_topics
-                idx_bounds = [idx_bounds, sum(obj.n_msgs(1:k))];
-            end
-
-            % Update new data & ZOH
-            % Cycle for all time samples
-            for i = 1:length(merged_dataset.time)
-                % for all topics
-                for j = 1:(obj.n_topics)
-                    % if the sample belongs to the j-th topic
-                    if( (idxs(i) > idx_bounds(j)) && (idxs(i) <= idx_bounds(j + 1)) )
-                        % Update New Data
-                        merged_dataset.data{j}{i} = obj.topic_data{j}{idxs(i) - idx_bounds(j)};
-
-                        % Assign to the other topics the previous value
-                        % (ZOH)
-                        for k = 1:obj.n_topics
-                            if((k ~= j) && (i ~= 1))
-                                % Double check on the index.
-                                % This is because is already initialized
-                                merged_dataset.data{k}{i} = merged_dataset.data{k}{i - 1};
-                            end
+        % Convert in Time Series
+        function ros2ts(obj)
+            for i = 1:obj.n_topics
+                switch obj.msg_type{i}
+                    case 'sensor_msgs/Image'
+                        % Convert in image matrix (4d array)
+                        for j = 1:length(obj.topic_data{i})
+                            imageMatrix(:, :, :, j) = obj.topic_data{i}{j};
                         end
+                        % Time series object
+                        obj.topic_ts{i} = timeseries(imageMatrix, obj.topic_time{i});
+
+                    case 'std_msgs/Float32MultiArray'
+                        obj.topic_ts{i} = timeseries(cell2mat(obj.topic_data{i})', obj.topic_time{i});
+        
+                    case 'std_msgs/Float64MultiArray'
+                        obj.topic_ts{i} = timeseries(cell2mat(obj.topic_data{i})', obj.topic_time{i});
+
+                    case 'geometry_msgs/TransformStamped'
+                        obj.topic_ts{i} = timeseries(cell2mat(struct2cell(cell2mat(obj.topic_data{i})'))', obj.topic_time{i});
                     
-                        % Continue to the next topic
-                        continue;
+                    case 'vicon_bridge/Markers'
+                        obj.topic_ts{i} = timeseries(cell2mat(obj.topic_data{i})', obj.topic_time{i});
+                    
+                    otherwise
+                        obj.topic_ts{i} = timeseries(NaN*ones(size(obj.topic_time{i})), obj.topic_time{i});
+                end
+            end
+        end
+        
+        % Synchronize Topics
+        function synchronization(obj, method)
+            for i = 1:obj.n_topics
+                for j = 1:obj.n_topics
+                    if i < j    
+                        [obj.topic_ts{i}, obj.topic_ts{j}] = synchronize(obj.topic_ts{i}, obj.topic_ts{j}, ...
+                                                                        method,'KeepOriginalTimes',true, ...
+                                                                        'InterpMethod', 'zoh');
                     end
                 end
             end
         end
+    
     end
 end 
