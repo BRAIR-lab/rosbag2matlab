@@ -141,19 +141,24 @@ classdef Bag_Analyzer < handle
                             imageMatrix(:, :, :, j) = obj.topic_data{i}{j};
                         end
                         % Time series object
-                        obj.topic_ts{i} = timeseries(imageMatrix, obj.topic_time{i});
+                        obj.topic_ts{i} = timeseries(imageMatrix, obj.topic_time{i}, ...
+                                                        "Name", obj.topic_names{i});
 
                     case 'std_msgs/Float32MultiArray'
-                        obj.topic_ts{i} = timeseries(cell2mat(obj.topic_data{i})', obj.topic_time{i});
+                        obj.topic_ts{i} = timeseries(double(cell2mat(obj.topic_data{i})'), obj.topic_time{i}, ...
+                                                        "Name", obj.topic_names{i});
         
                     case 'std_msgs/Float64MultiArray'
-                        obj.topic_ts{i} = timeseries(cell2mat(obj.topic_data{i})', obj.topic_time{i});
+                        obj.topic_ts{i} = timeseries(double(cell2mat(obj.topic_data{i})'), obj.topic_time{i}, ...
+                                                        "Name", obj.topic_names{i});
 
                     case 'geometry_msgs/TransformStamped'
-                        obj.topic_ts{i} = timeseries(cell2mat(struct2cell(cell2mat(obj.topic_data{i})'))', obj.topic_time{i});
+                        obj.topic_ts{i} = timeseries(cell2mat(struct2cell(cell2mat(obj.topic_data{i})'))', obj.topic_time{i}, ...
+                                                        "Name", obj.topic_names{i});
                     
                     case 'vicon_bridge/Markers'
-                        obj.topic_ts{i} = timeseries(cell2mat(obj.topic_data{i})', obj.topic_time{i});
+                        obj.topic_ts{i} = timeseries(cell2mat(obj.topic_data{i})', obj.topic_time{i}, ...
+                                                        "Name", obj.topic_names{i});
                     
                     otherwise
                         obj.topic_ts{i} = timeseries(NaN*ones(size(obj.topic_time{i})), obj.topic_time{i});
@@ -165,7 +170,7 @@ classdef Bag_Analyzer < handle
         function synchronization(obj, resampling_period)
             for i = 1:obj.n_topics
                 for j = 1:obj.n_topics
-                    if i < j
+                    if i ~= j
                         [obj.topic_ts{i}, obj.topic_ts{j}] = synchronize(obj.topic_ts{i}, obj.topic_ts{j}, ...
                                                                         'uniform', 'Interval', resampling_period, ...
                                                                         'KeepOriginalTimes',true, ...
