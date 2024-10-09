@@ -70,22 +70,18 @@ classdef Bag_Analyzer < handle
                                         se3_data.Rotation.W; se3_data.Rotation.X; se3_data.Rotation.Y; se3_data.Rotation.Z];
                     end
 
-                 case 'vicon_bridge/Markers'
-                     % msg_data = msg_cell;
-                    % for i = 1:length(msg_cell)
-                    %     se3_data = msg_cell{i}.Transform;
-                    %     msg_data(:, i) = [se3_data.Translation.X; se3_data.Translation.Y; se3_data.Translation.Z;
-                    %                     se3_data.Rotation.W; se3_data.Rotation.X; se3_data.Rotation.Y; se3_data.Rotation.Z];
-                    for i = 1:length(msg_cell)
-                        n_markers = length(msg_cell{i}.Markers_);
-                        % Fill vector
-                        markers_pos = [];
-                        for j = 1:n_markers
-                            markers_pos = [markers_pos; msg_cell{i}.Markers_(j).Translation.X; msg_cell{i}.Markers_(j).Translation.Y; msg_cell{i}.Markers_(j).Translation.Z];
-                        end
-                        msg_data(:, i) = markers_pos./1000;
-                    end
-                    % end
+                 % case 'vicon_bridge/Markers'
+                 %     % Read only the first instant the number of markers.
+                 %    for i = 1:length(msg_cell)
+                 %        n_markers = length(msg_cell{i}.Markers_);
+                 %        % Fill vector
+                 %        markers_pos = [];
+                 %        for j = 1:n_markers
+                 %            markers_pos = [markers_pos; msg_cell{i}.Markers_(j).Translation.X; msg_cell{i}.Markers_(j).Translation.Y; msg_cell{i}.Markers_(j).Translation.Z];
+                 %        end
+                 %        disp("Marker Length: " + num2str(length(markers_pos)));
+                 %        msg_data(:, i) = markers_pos./1000;
+                 %    end
                 otherwise
                     msg_data = msg_cell;
             end
@@ -110,8 +106,12 @@ classdef Bag_Analyzer < handle
         end
 
         % Synchronization
-        function [merged_time, merged_dataset] = synchronization(obj, resampling_period)
-            method = 'previous'; % hardcoded for the image 
+        function [merged_time, merged_dataset] = synchronization(obj, resampling_period, mask)
+            method = 'previous'; % hardcoded for the image
+
+            if nargin <= 2
+                mask = true*ones(1, obj.n_topics);
+            end
 
             % Merged Time Definition
             merged_time = 0:resampling_period:obj.bag_duration;
@@ -119,7 +119,7 @@ classdef Bag_Analyzer < handle
             % Interpolate
             for i = 1:obj.n_topics
                 % Temporarirly skip for unsupported msg types
-                if length(obj.topics_ts{i}) ~= 1
+                if (length(obj.topics_ts{i}) ~= 1) || (~mask(i))
                     continue;
                 end
 
@@ -151,6 +151,9 @@ classdef Bag_Analyzer < handle
                 end
 
             end
+        
+            % Remove Skipped Topics
+            merged_dataset = merged_dataset(~cellfun('isempty', merged_dataset));
         end
     
     end
