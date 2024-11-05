@@ -70,18 +70,32 @@ classdef Bag_Analyzer < handle
                                         se3_data.Rotation.W; se3_data.Rotation.X; se3_data.Rotation.Y; se3_data.Rotation.Z];
                     end
 
-                 % case 'vicon_bridge/Markers'
-                 %     % Read only the first instant the number of markers.
-                 %    for i = 1:length(msg_cell)
-                 %        n_markers = length(msg_cell{i}.Markers_);
-                 %        % Fill vector
-                 %        markers_pos = [];
-                 %        for j = 1:n_markers
-                 %            markers_pos = [markers_pos; msg_cell{i}.Markers_(j).Translation.X; msg_cell{i}.Markers_(j).Translation.Y; msg_cell{i}.Markers_(j).Translation.Z];
-                 %        end
-                 %        disp("Marker Length: " + num2str(length(markers_pos)));
-                 %        msg_data(:, i) = markers_pos./1000;
-                 %    end
+                 case 'vicon_bridge/Markers'
+                     % Read only the first instant the number of markers.
+                    for i = 1:length(msg_cell)
+                        n_markers = length(msg_cell{i}.Markers_);
+                        % Fill vector
+                        markers_pos = [];
+                        for j = 1:n_markers
+                            single_marker = [msg_cell{i}.Markers_(j).Translation.X; msg_cell{i}.Markers_(j).Translation.Y; msg_cell{i}.Markers_(j).Translation.Z];
+                            markers_pos = [markers_pos; single_marker];
+                        end
+                        msg_data(:, i) = markers_pos./1000; % markers are expressed in [mm]
+                    end
+
+                case 'sensor_msgs/PointCloud'
+                    % Read only the first instant the number of markers.
+                    for i = 1:length(msg_cell)
+                        n_points = length(msg_cell{i}.Points);
+                        % Fill vector
+                        points_pos = [];
+                        for j = 1:n_points
+                            single_point = double([msg_cell{i}.Points(j).X; msg_cell{i}.Points(j).Y; msg_cell{i}.Points(j).Z]);
+                            points_pos = [points_pos; single_point];
+                        end
+                        msg_data(:, i) = points_pos;   % [m]
+                    end
+
                 otherwise
                     msg_data = msg_cell;
             end
