@@ -54,13 +54,25 @@ classdef Bag_Analyzer < handle
                 case 'std_msgs/Float32MultiArray'
                     % msg_data = msg_cell;
                     for i = 1:length(msg_cell)
-                        msg_data(:, i) = double(msg_cell{i}.Data);
+                        msg = double(msg_cell{i}.Data);
+
+                        if(isempty(msg))
+                            msg_data(:, i) = NaN;
+                        else
+                            msg_data(:, i) = msg;
+                        end
                     end
 
                 case 'std_msgs/Float64MultiArray'
                     % msg_data = msg_cell;
                     for i = 1:length(msg_cell)
-                        msg_data(:, i) = double(msg_cell{i}.Data);
+                        msg = double(msg_cell{i}.Data);
+
+                        if(isempty(msg))
+                            msg_data(:, i) = NaN;
+                        else
+                            msg_data(:, i) = msg;
+                        end
                     end
                 
                 case 'geometry_msgs/TransformStamped'
