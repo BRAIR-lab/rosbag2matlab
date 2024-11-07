@@ -20,6 +20,9 @@ classdef Bag_Analyzer < handle
         %% Timeseries
         topics_ts
         synchronized_topics
+
+        %% Marker & VICON Utilities
+        marker_dictionary
     end
 
     %% Methods
@@ -37,6 +40,9 @@ classdef Bag_Analyzer < handle
             % Topics Info
             obj.topic_names = obj.bag_obj.AvailableTopics.Row';
             obj.n_topics = length(obj.topic_names);
+
+            % Init Marker Dictionary
+            obj.marker_dictionary = dictionary([], []);
 
             % Extract Topics & Msgs
             obj.extractMsgs();
@@ -83,17 +89,7 @@ classdef Bag_Analyzer < handle
                     end
 
                  case 'vicon_bridge/Markers'
-                     % Read only the first instant the number of markers.
-                    for i = 1:length(msg_cell)
-                        n_markers = length(msg_cell{i}.Markers_);
-                        % Fill vector
-                        markers_pos = [];
-                        for j = 1:n_markers
-                            single_marker = [msg_cell{i}.Markers_(j).Translation.X; msg_cell{i}.Markers_(j).Translation.Y; msg_cell{i}.Markers_(j).Translation.Z];
-                            markers_pos = [markers_pos; single_marker];
-                        end
-                        msg_data(:, i) = markers_pos./1000; % markers are expressed in [mm]
-                    end
+                     msg_data = marker_management(msg_cell);
 
                 case 'sensor_msgs/PointCloud'
                     % Read only the first instant the number of markers.
