@@ -104,6 +104,14 @@ classdef Bag_Analyzer < handle
                         msg_data(:, i) = points_pos;   % [m]
                     end
 
+                case 'sensor_msgs/PointCloud2'
+                    % Read only the first instant the number of markers.
+                    for i = 1:length(msg_cell)
+                        points = double(rosReadXYZ(msg_cell{i})');
+                        points = reshape(points, size(points, 1)*size(points, 2), 1);
+                        msg_data(:, i) = points;   % [m]
+                    end
+
                 otherwise
                     msg_data = msg_cell;
             end
