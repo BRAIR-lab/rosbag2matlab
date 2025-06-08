@@ -51,7 +51,6 @@ classdef Bag_Analyzer < handle
         function msg_data = extractData(obj, msg_cell)
             % Init
             num_msgs = length(msg_cell);
-            disp(msg_cell{1}.MessageType)
 
             switch msg_cell{1}.MessageType
                 case 'sensor_msgs/Image'
