@@ -49,17 +49,26 @@ classdef Bag_Analyzer < handle
         end
 
         function msg_data = extractData(obj, msg_cell)
-            
+            % Init
+            num_msgs = length(msg_cell);
+            disp(msg_cell{1}.MessageType)
+
             switch msg_cell{1}.MessageType
                 case 'sensor_msgs/Image'
                     % Extract Image
-                    for i = 1:length(msg_cell)
+                    for i = 1:num_msgs
+                        msg_data(:, :, :, i) = rosReadImage(msg_cell{i});
+                    end
+                 
+                case 'sensor_msgs/CompressedImage'
+                    % Extract Image
+                    for i = 1:num_msgs
                         msg_data(:, :, :, i) = rosReadImage(msg_cell{i});
                     end
                  
                 case 'std_msgs/Float32MultiArray'
                     % msg_data = msg_cell;
-                    for i = 1:length(msg_cell)
+                    for i = 1:num_msgs
                         msg = double(msg_cell{i}.Data);
 
                         if(isempty(msg))
@@ -71,7 +80,7 @@ classdef Bag_Analyzer < handle
 
                 case 'std_msgs/Float64MultiArray'
                     % msg_data = msg_cell;
-                    for i = 1:length(msg_cell)
+                    for i = 1:num_msgs
                         msg = double(msg_cell{i}.Data);
 
                         if(isempty(msg))
@@ -82,18 +91,40 @@ classdef Bag_Analyzer < handle
                     end
                 
                 case 'geometry_msgs/TransformStamped'
-                    for i = 1:length(msg_cell)
+                    for i = 1:num_msgs
                         se3_data = msg_cell{i}.Transform;
                         msg_data(:, i) = [se3_data.Translation.X; se3_data.Translation.Y; se3_data.Translation.Z;
                                         se3_data.Rotation.W; se3_data.Rotation.X; se3_data.Rotation.Y; se3_data.Rotation.Z];
                     end
+
+                case 'geometry_msgs/PointStamped'
+                    % msg_data = msg_cell;
+                    for i = 1:num_msgs
+                        msg_data(:, i) = [msg_cell{i}.Point.X; msg_cell{i}.Point.Y; msg_cell{i}.Point.Z];
+                    end
+
+                % case 'tf2_msgs/TFMessage'
+                %     % msg_data = msg_cell;
+                %     for i = 1:num_msgs
+                %         % msg_data(:, i) = [msg_cell{i}.Point.X; msg_cell{i}.Point.Y; msg_cell{i}.Point.Z];
+                %         if(isscalar(msg_cell{i}.Transforms))
+                %             transform_obj =  msg_cell{i}.Transforms.Transform;
+                %             msg_data(:, i) = [transform_obj.Translation.X; 
+                %                                 transform_obj.Translation.Y;
+                %                                 transform_obj.Translation.Z;
+                %                                 transform_obj.Rotation.W;
+                %                                 transform_obj.Rotation.X;
+                %                                 transform_obj.Rotation.Y;
+                %                                 transform_obj.Rotation.Z];
+                %         end
+                %     end
 
                  case 'vicon_bridge/Markers'
                      msg_data = marker_management(msg_cell);
 
                 case 'sensor_msgs/PointCloud'
                     % Read only the first instant the number of markers.
-                    for i = 1:length(msg_cell)
+                    for i = 1:num_msgs
                         n_points = length(msg_cell{i}.Points);
                         % Fill vector
                         points_pos = [];
@@ -106,11 +137,14 @@ classdef Bag_Analyzer < handle
 
                 case 'sensor_msgs/PointCloud2'
                     % Read only the first instant the number of markers.
-                    for i = 1:length(msg_cell)
+                    for i = 1:num_msgs
                         points = double(rosReadXYZ(msg_cell{i})');
                         points = reshape(points, size(points, 1)*size(points, 2), 1);
                         msg_data(:, i) = points;   % [m]
                     end
+
+                % case 'tf'
+                %     msg_data = msg_cell;
 
                 otherwise
                     msg_data = msg_cell;
@@ -154,7 +188,7 @@ classdef Bag_Analyzer < handle
                 end
 
                 % Merge Dataset
-                if obj.msg_type{i} == "sensor_msgs/Image"
+                if (obj.msg_type{i} == "sensor_msgs/Image") || (obj.msg_type{i} == "sensor_msgs/CompressedImage")
                     % Due to the unsupport of interp1() for 4d matrix,
                     % I tried this alternative solution:
                     % Just reordering the samples index and after assign
