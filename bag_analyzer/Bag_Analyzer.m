@@ -102,6 +102,13 @@ classdef Bag_Analyzer < handle
                         msg_data(:, i) = [msg_cell{i}.Point.X; msg_cell{i}.Point.Y; msg_cell{i}.Point.Z];
                     end
 
+                case 'geometry_msgs/WrenchStamped'
+                    % msg_data = msg_cell;
+                    for i = 1:num_msgs
+                        msg_data(:, i) = [msg_cell{i}.Wrench.Force.X; msg_cell{i}.Wrench.Force.Y; msg_cell{i}.Wrench.Force.Z;
+                                          msg_cell{i}.Wrench.Torque.X; msg_cell{i}.Wrench.Torque.Y; msg_cell{i}.Wrench.Torque.Z];
+                    end
+
                 % case 'tf2_msgs/TFMessage'
                 %     % msg_data = msg_cell;
                 %     for i = 1:num_msgs
