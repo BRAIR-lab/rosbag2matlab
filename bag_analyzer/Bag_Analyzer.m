@@ -176,7 +176,7 @@ classdef Bag_Analyzer < handle
         end
 
         % Synchronization
-        function [merged_time, merged_dataset] = synchronization(obj, resampling_period, mask)
+        function [merged_time, merged_dataset, topics] = synchronization(obj, resampling_period, mask)
             method = 'previous'; % hardcoded for the image
 
             if nargin <= 2
@@ -220,6 +220,8 @@ classdef Bag_Analyzer < handle
                     merged_dataset{i} = merged_dataset{i}';
                 end
 
+                % Store topic names
+                topics{i} = obj.topic_names{i};
             end
         
             % Remove Skipped Topics
