@@ -53,9 +53,6 @@ function [msg_data, marker_dict] = marker_management(msg_cell, options)
                                               marker.Translation.Z] / 1000;
             end
         end
-        
-        % Append this message’s vector
-        msg_data(:,i) = temp_data;
     end
     
     % --- Step 4 (Optional but helpful): Create a dictionary (struct) for easy access ---
