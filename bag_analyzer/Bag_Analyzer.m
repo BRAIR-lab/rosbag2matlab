@@ -126,7 +126,9 @@ classdef Bag_Analyzer < handle
                 %     end
 
                  case 'vicon_bridge/Markers'
-                     msg_data = marker_management(msg_cell);
+                    msg_data = marker_management(msg_cell, obj.marker_dictionary);
+                    obj.marker_dictionary = obj.marker_dictionary;
+
 
                 case 'sensor_msgs/PointCloud'
                     % Read only the first instant the number of markers.
