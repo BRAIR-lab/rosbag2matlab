@@ -176,7 +176,7 @@ classdef Bag_Analyzer < handle
         end
 
         % Synchronization
-        function [merged_time, merged_dataset, topics] = synchronization(obj, resampling_period, mask)
+        function [merged_time, merged_dataset, sync_marker_dic, topics] = synchronization(obj, resampling_period, mask)
             method = 'previous'; % hardcoded for the image
 
             if nargin <= 2
@@ -218,6 +218,15 @@ classdef Bag_Analyzer < handle
 
                     % Transposing, I like more column notation
                     merged_dataset{i} = merged_dataset{i}';
+
+                    if(obj.msg_type{i} == "vicon_bridge/Markers")
+                        % Synchronize markers' Dictionary
+                        marker_names = string(fieldnames(obj.marker_dictionary));
+ 
+                        for j = 1:length(marker_names)
+                            obj.marker_dictionary.(marker_names(j)) = interp1(obj.topics_ts{i}.Time', obj.marker_dictionary.(marker_names(j))', merged_time', method)';
+                        end
+                    end
                 end
 
                 % Store topic names
@@ -226,6 +235,9 @@ classdef Bag_Analyzer < handle
         
             % Remove Skipped Topics
             merged_dataset = merged_dataset(~cellfun('isempty', merged_dataset));
+
+            % Updated Marker Dictionary
+            sync_marker_dic = obj.marker_dictionary;
         end
     
     end
