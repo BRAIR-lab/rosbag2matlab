@@ -9,7 +9,9 @@ function [msg_data, marker_dict] = marker_management(msg_cell, options)
     all_marker_names = {};
     for i = 1:length(msg_cell)
         for j = 1:length(msg_cell{i}.Markers_)
-            marker_name = msg_cell{i}.Markers_(j).MarkerName;
+            % Marker Name
+            marker_name = convertStringsToChars(string(msg_cell{i}.Markers_(j).SubjectName) + "/" + string(msg_cell{i}.Markers_(j).MarkerName));
+
             % Add name if it's not empty or if we are not skipping unknowns
             if ~isempty(marker_name) || ~options.skip_unknown
                 all_marker_names{end+1} = marker_name;
