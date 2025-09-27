@@ -46,11 +46,16 @@ function [msg_data, marker_dict] = marker_management(msg_cell, options)
                 
                 % Calculate the corresponding rows in the data matrix
                 row_indices = (marker_idx - 1) * 3 + (1:3);
+
+                if(marker.Occluded == 1)
+                    msg_data(row_indices, i) = NaN*ones(3, 1);
+                else
+                    % Extract coordinates, convert from mm to meters, and assign
+                    msg_data(row_indices, i) = [marker.Translation.X; ...
+                                                  marker.Translation.Y; ...
+                                                  marker.Translation.Z] / 1000;
+                end
                 
-                % Extract coordinates, convert from mm to meters, and assign
-                msg_data(row_indices, i) = [marker.Translation.X; ...
-                                              marker.Translation.Y; ...
-                                              marker.Translation.Z] / 1000;
             end
         end
     end
