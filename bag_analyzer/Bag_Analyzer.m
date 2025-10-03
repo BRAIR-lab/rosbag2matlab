@@ -88,6 +88,12 @@ classdef Bag_Analyzer < handle
                             msg_data(:, i) = msg;
                         end
                     end
+
+                case 'geometry_msgs/PoseStamped'
+                    for i = 1:num_msgs
+                        msg_data(:, i) = [msg_cell{i}.Pose.Position.X; msg_cell{i}.Pose.Position.Y; msg_cell{i}.Pose.Position.Z;
+                                            msg_cell{i}.Pose.Orientation.W; msg_cell{i}.Pose.Orientation.X; msg_cell{i}.Pose.Orientation.Y; msg_cell{i}.Pose.Orientation.Z];
+                    end
                 
                 case 'geometry_msgs/TransformStamped'
                     for i = 1:num_msgs
@@ -109,24 +115,8 @@ classdef Bag_Analyzer < handle
                                           msg_cell{i}.Wrench.Torque.X; msg_cell{i}.Wrench.Torque.Y; msg_cell{i}.Wrench.Torque.Z];
                     end
 
-                % case 'tf2_msgs/TFMessage'
-                %     % msg_data = msg_cell;
-                %     for i = 1:num_msgs
-                %         % msg_data(:, i) = [msg_cell{i}.Point.X; msg_cell{i}.Point.Y; msg_cell{i}.Point.Z];
-                %         if(isscalar(msg_cell{i}.Transforms))
-                %             transform_obj =  msg_cell{i}.Transforms.Transform;
-                %             msg_data(:, i) = [transform_obj.Translation.X; 
-                %                                 transform_obj.Translation.Y;
-                %                                 transform_obj.Translation.Z;
-                %                                 transform_obj.Rotation.W;
-                %                                 transform_obj.Rotation.X;
-                %                                 transform_obj.Rotation.Y;
-                %                                 transform_obj.Rotation.Z];
-                %         end
-                %     end
-
                  case 'vicon_bridge/Markers'
-                     [msg_data, obj.marker_dictionary] = marker_management(msg_cell, "skip_unknown", true);
+                     [~, obj.marker_dictionary] = marker_management(msg_cell, "skip_unknown", true);
 
                 case 'sensor_msgs/PointCloud'
                     % Read only the first instant the number of markers.
@@ -149,8 +139,35 @@ classdef Bag_Analyzer < handle
                         msg_data(:, i) = points;   % [m]
                     end
 
-                % case 'tf'
-                %     msg_data = msg_cell;
+                case 'dynamic_manipulation_dlo/MarkerRigidBodyPoses'
+                    % msg_data = msg_cell;
+                    for i = 1:num_msgs
+                        % Save RigidBodyPose
+                        msg_data(:, i) = [msg_cell{i}.RigidBodyPose.Position.X; msg_cell{i}.RigidBodyPose.Position.Y; msg_cell{i}.RigidBodyPose.Position.Z;
+                                            msg_cell{i}.RigidBodyPose.Orientation.W; msg_cell{i}.RigidBodyPose.Orientation.X; msg_cell{i}.RigidBodyPose.Orientation.Y; msg_cell{i}.RigidBodyPose.Orientation.Z];
+
+                        % Marker Management
+                        if(~isempty(msg_cell{i}.MarkerIds))
+                            % Reuse marker_management converting in VICON
+                            % Format
+                            n_markers = length(msg_cell{i}.MarkerIds);
+                            
+                            % for each marker
+                            for j = 1:n_markers
+                                vicon_format_markers{i}.Markers_(j).Occluded = 0;
+                                vicon_format_markers{i}.Markers_(j).SubjectName = "";
+                                vicon_format_markers{i}.Markers_(j).MarkerName = "marker_" + msg_cell{i}.MarkerIds(j);
+                                vicon_format_markers{i}.Markers_(j).Translation.X = msg_cell{i}.MarkerPoses.Poses(j).Position.X * 1000;
+                                vicon_format_markers{i}.Markers_(j).Translation.Y = msg_cell{i}.MarkerPoses.Poses(j).Position.Y * 1000;
+                                vicon_format_markers{i}.Markers_(j).Translation.Z = msg_cell{i}.MarkerPoses.Poses(j).Position.Z * 1000;
+                            end
+                        end
+                    end
+
+                    % Marker Management
+                    if(~all(cellfun(@(x) isempty(x.MarkerIds), msg_cell)))
+                        [~, obj.marker_dictionary] = marker_management(vicon_format_markers, "skip_unknown", true, "replace_style", 'delete');
+                    end
 
                 otherwise
                     msg_data = msg_cell;
@@ -177,6 +194,12 @@ classdef Bag_Analyzer < handle
 
         % Synchronization
         function [merged_time, merged_dataset, sync_marker_dic, topics] = synchronization(obj, resampling_period, mask)
+            arguments
+                obj
+                resampling_period = 1.0e+2;
+                mask = true*ones(1, obj.n_topics);
+            end
+
             method = 'previous'; % hardcoded for the image
 
             if nargin <= 2
@@ -239,6 +262,5 @@ classdef Bag_Analyzer < handle
             % Updated Marker Dictionary
             sync_marker_dic = obj.marker_dictionary;
         end
-    
     end
 end
