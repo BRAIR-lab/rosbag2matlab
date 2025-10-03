@@ -3,6 +3,7 @@ function [msg_data, marker_dict] = marker_management(msg_cell, options)
     arguments
         msg_cell;
         options.skip_unknown = true; % Default to true as it's common practice
+        options.replace_style = 'underscore';
     end
 
     % --- Step 1: Discover all unique marker names and create a stable order ---
@@ -68,7 +69,7 @@ function [msg_data, marker_dict] = marker_management(msg_cell, options)
     for i = 1:num_unique_markers
         name = unique_names{i};
         % Sanitize name to be a valid MATLAB field name (e.g., "Marker 1" -> "Marker1")
-        valid_name = matlab.lang.makeValidName(name);
+        valid_name = matlab.lang.makeValidName(name, 'ReplacementStyle', options.replace_style);
         row_indices = (i-1)*3 + (1:3);
         marker_dict.(valid_name) = msg_data(row_indices, :);
     end
