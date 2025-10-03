@@ -23,14 +23,24 @@ classdef Bag_Analyzer < handle
 
         %% Marker & VICON Utilities
         marker_dictionary
+
+        %% Preferences
+        quaternion_order
     end
 
     %% Methods
     methods
         % Constructor
-        function obj = Bag_Analyzer(bag_name)
+        function obj = Bag_Analyzer(bag_name, options)
+            arguments
+                bag_name
+                options.quaternion_order = "wxyz";
+            end
             % Init Bag Object
             obj.bag_obj = rosbag(bag_name);
+
+            % Quaternion Order
+            obj.quaternion_order = options.quaternion_order;
 
             % Time Information
             obj.start_time = obj.bag_obj.StartTime;
@@ -91,8 +101,14 @@ classdef Bag_Analyzer < handle
 
                 case 'geometry_msgs/PoseStamped'
                     for i = 1:num_msgs
-                        msg_data(:, i) = [msg_cell{i}.Pose.Position.X; msg_cell{i}.Pose.Position.Y; msg_cell{i}.Pose.Position.Z;
+                        % Save RigidBodyPose
+                        if obj.quaternion_order == "wxyz"
+                            msg_data(:, i) = [msg_cell{i}.Pose.Position.X; msg_cell{i}.Pose.Position.Y; msg_cell{i}.Pose.Position.Z;
                                             msg_cell{i}.Pose.Orientation.W; msg_cell{i}.Pose.Orientation.X; msg_cell{i}.Pose.Orientation.Y; msg_cell{i}.Pose.Orientation.Z];
+                        elseif obj.quaternion_order == "xyzw"
+                            msg_data(:, i) = [msg_cell{i}.Pose.Position.X; msg_cell{i}.Pose.Position.Y; msg_cell{i}.Pose.Position.Z;
+                                            msg_cell{i}.Pose.Orientation.X; msg_cell{i}.Pose.Orientation.Y; msg_cell{i}.Pose.Orientation.Z; msg_cell{i}.Pose.Orientation.W];
+                        end
                     end
                 
                 case 'geometry_msgs/TransformStamped'
@@ -143,8 +159,13 @@ classdef Bag_Analyzer < handle
                     % msg_data = msg_cell;
                     for i = 1:num_msgs
                         % Save RigidBodyPose
-                        msg_data(:, i) = [msg_cell{i}.RigidBodyPose.Position.X; msg_cell{i}.RigidBodyPose.Position.Y; msg_cell{i}.RigidBodyPose.Position.Z;
-                                            msg_cell{i}.RigidBodyPose.Orientation.W; msg_cell{i}.RigidBodyPose.Orientation.X; msg_cell{i}.RigidBodyPose.Orientation.Y; msg_cell{i}.RigidBodyPose.Orientation.Z];
+                        if obj.quaternion_order == "wxyz"
+                            msg_data(:, i) = [msg_cell{i}.RigidBodyPose.Position.X; msg_cell{i}.RigidBodyPose.Position.Y; msg_cell{i}.RigidBodyPose.Position.Z;
+                                                msg_cell{i}.RigidBodyPose.Orientation.W; msg_cell{i}.RigidBodyPose.Orientation.X; msg_cell{i}.RigidBodyPose.Orientation.Y; msg_cell{i}.RigidBodyPose.Orientation.Z];
+                        elseif obj.quaternion_order == "xyzw"
+                            msg_data(:, i) = [msg_cell{i}.RigidBodyPose.Position.X; msg_cell{i}.RigidBodyPose.Position.Y; msg_cell{i}.RigidBodyPose.Position.Z;
+                                                msg_cell{i}.RigidBodyPose.Orientation.X; msg_cell{i}.RigidBodyPose.Orientation.Y; msg_cell{i}.RigidBodyPose.Orientation.Z; msg_cell{i}.RigidBodyPose.Orientation.W];
+                        end
 
                         % Marker Management
                         if(~isempty(msg_cell{i}.MarkerIds))

@@ -15,7 +15,7 @@ addpath(bagdir_name);
 % fullfile makes compatible with windows or ubuntu paths
 % Ubuntu "/" | Windows "\"
 % bag = rosbag(fullfile(bagdir_name, bagname + bag_ext));
-bag_analyzer_obj = Bag_Analyzer(fullfile(bagdir_name, bagname + bag_ext));
+bag_analyzer_obj = Bag_Analyzer(fullfile(bagdir_name, bagname + bag_ext), "quaternion_order", "xyzw");
 
 %% Synchronization
 % Sampling Frequency
