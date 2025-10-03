@@ -24,3 +24,6 @@ mask = true*ones(1, length(bag_analyzer_obj.topic_names));
 
 % Call synchronization method
 [merged_time, merged_dataset, sync_marker_dict, topics] = bag_analyzer_obj.synchronization(1/fs, mask);
+
+% Renamed Markers
+sync_marker_dict = rename_markers(sync_marker_dict);

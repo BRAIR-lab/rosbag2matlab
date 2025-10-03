@@ -262,6 +262,5 @@ classdef Bag_Analyzer < handle
             % Updated Marker Dictionary
             sync_marker_dic = obj.marker_dictionary;
         end
-    
     end
 end
