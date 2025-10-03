@@ -223,10 +223,6 @@ classdef Bag_Analyzer < handle
 
             method = 'previous'; % hardcoded for the image
 
-            if nargin <= 2
-                mask = true*ones(1, obj.n_topics);
-            end
-
             % Merged Time Definition
             merged_time = 0:resampling_period:obj.bag_duration;
 
@@ -262,19 +258,27 @@ classdef Bag_Analyzer < handle
 
                     % Transposing, I like more column notation
                     merged_dataset{i} = merged_dataset{i}';
-
-                    if(obj.msg_type{i} == "vicon_bridge/Markers")
-                        % Synchronize markers' Dictionary
-                        marker_names = string(fieldnames(obj.marker_dictionary));
- 
-                        for j = 1:length(marker_names)
-                            obj.marker_dictionary.(marker_names(j)) = interp1(obj.topics_ts{i}.Time', obj.marker_dictionary.(marker_names(j))', merged_time', method)';
-                        end
-                    end
                 end
 
                 % Store topic names
                 topics{i} = obj.topic_names{i};
+            end
+
+            % idx = 
+            %% Synchronize Marker Dictionary
+            vicon_idx = find(strcmp(obj.msg_type, "vicon_bridge/Markers"), 1, 'last');
+            optitrack_idx = find(strcmp(obj.msg_type, "dynamic_manipulation_dlo/MarkerRigidBodyPoses"), 1, 'last');
+
+            if(~isempty(vicon_idx) || ~isempty(optitrack_idx))
+                % Find idx
+                idx = [vicon_idx, optitrack_idx];
+
+                % Synchronize markers' Dictionary
+                marker_names = string(fieldnames(obj.marker_dictionary));
+
+                for j = 1:length(marker_names)
+                    obj.marker_dictionary.(marker_names(j)) = interp1(obj.topics_ts{idx}.Time', obj.marker_dictionary.(marker_names(j))', merged_time', method)';
+                end
             end
         
             % Remove Skipped Topics
