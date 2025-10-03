@@ -194,6 +194,12 @@ classdef Bag_Analyzer < handle
 
         % Synchronization
         function [merged_time, merged_dataset, sync_marker_dic, topics] = synchronization(obj, resampling_period, mask)
+            arguments
+                obj
+                resampling_period = 1.0e+2;
+                mask = true*ones(1, obj.n_topics);
+            end
+
             method = 'previous'; % hardcoded for the image
 
             if nargin <= 2
