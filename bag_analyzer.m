@@ -22,7 +22,7 @@ bag_analyzer_obj = Bag_Analyzer(fullfile(bagdir_name, bagname + bag_ext), "quate
 fs = 1.0e+2;
 
 % Call synchronization method
-[merged_time, merged_dataset, sync_marker_dict, topics] = bag_analyzer_obj.synchronization(1/fs);
+[merged_time, merged_dataset, sync_marker_dict, topics] = bag_analyzer_obj.synchronization(1/fs, "interpolation_method", 'previous');
 
 % Renamed Markers
 sync_marker_dict = rename_markers(sync_marker_dict);
