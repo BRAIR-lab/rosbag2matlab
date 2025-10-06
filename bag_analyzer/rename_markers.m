@@ -1,4 +1,8 @@
-function new_dict = rename_markers(old_dict)
+function new_dict = rename_markers(old_dict, options)
+    arguments
+        old_dict
+        options.preserve_order = true;
+    end
     % Get field names of the input structure
     fields = fieldnames(old_dict);
 
@@ -12,8 +16,11 @@ function new_dict = rename_markers(old_dict)
         ids(i) = str2double(tokens{1}{1});
     end
 
-    % Sort by IDs
-    [~, order] = sort(ids);
+    % Sort by IDs or Preserve the order
+    order = 1:length(ids);
+    if ~options.preserve_order
+        [~, order] = sort(ids);        
+    end
 
     % Build new structure with renamed fields marker1, marker2, ...
     new_dict = struct();

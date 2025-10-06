@@ -176,7 +176,7 @@ classdef Bag_Analyzer < handle
                             % for each marker
                             for j = 1:n_markers
                                 vicon_format_markers{i}.Markers_(j).Occluded = 0;
-                                vicon_format_markers{i}.Markers_(j).SubjectName = "";
+                                vicon_format_markers{i}.Markers_(j).SubjectName = '';
                                 vicon_format_markers{i}.Markers_(j).MarkerName = "marker_" + msg_cell{i}.MarkerIds(j);
                                 vicon_format_markers{i}.Markers_(j).Translation.X = msg_cell{i}.MarkerPoses.Poses(j).Position.X * 1000;
                                 vicon_format_markers{i}.Markers_(j).Translation.Y = msg_cell{i}.MarkerPoses.Poses(j).Position.Y * 1000;
@@ -187,7 +187,8 @@ classdef Bag_Analyzer < handle
 
                     % Marker Management
                     if(~all(cellfun(@(x) isempty(x.MarkerIds), msg_cell)))
-                        [~, obj.marker_dictionary] = marker_management(vicon_format_markers, "skip_unknown", true, "replace_style", 'delete');
+                        [~, obj.marker_dictionary] = marker_management(vicon_format_markers, "skip_unknown", true, ...
+                                                                        "replace_style", 'delete', "preserve_order", true);
                     end
 
                 otherwise

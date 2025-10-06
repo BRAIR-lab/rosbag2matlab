@@ -4,6 +4,12 @@ function [msg_data, marker_dict] = marker_management(msg_cell, options)
         msg_cell;
         options.skip_unknown = true; % Default to true as it's common practice
         options.replace_style = 'underscore';
+        options.preserve_order = false;
+    end
+
+    % Preserve Order
+    if options.preserve_order
+        marker_order = [msg_cell{1}.Markers_.MarkerName];
     end
 
     % --- Step 1: Discover all unique marker names and create a stable order ---
@@ -15,13 +21,25 @@ function [msg_data, marker_dict] = marker_management(msg_cell, options)
 
             % Add name if it's not empty or if we are not skipping unknowns
             if ~isempty(marker_name) || ~options.skip_unknown
-                all_marker_names{end+1} = convertStringsToChars(string(msg_cell{i}.Markers_(j).SubjectName) + "/" + string(marker_name));
+                if isempty(msg_cell{i}.Markers_(j).SubjectName)
+                    all_marker_names{end+1} = convertStringsToChars(marker_name);
+                else
+                    all_marker_names{end+1} = convertStringsToChars(string(msg_cell{i}.Markers_(j).SubjectName) + "/" + marker_name);
+                end
             end
         end
     end
     
     % Get the sorted, unique list of marker names
     unique_names = sort(unique(all_marker_names));
+
+    % Preserve Order of the markers
+    if options.preserve_order
+        % Reorder A according to 'order'
+        [~, idx] = ismember(marker_order, unique_names);
+        unique_names = unique_names(idx);
+    end
+
     if options.skip_unknown
         % Ensure empty string "" is not in our list if we are skipping unknowns
         unique_names = unique_names(~cellfun('isempty', unique_names));

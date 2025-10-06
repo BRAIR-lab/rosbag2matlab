@@ -20,10 +20,9 @@ bag_analyzer_obj = Bag_Analyzer(fullfile(bagdir_name, bagname + bag_ext), "quate
 %% Synchronization
 % Sampling Frequency
 fs = 1.0e+2;
-mask = true*ones(1, length(bag_analyzer_obj.topic_names));
 
 % Call synchronization method
-[merged_time, merged_dataset, sync_marker_dict, topics] = bag_analyzer_obj.synchronization(1/fs, mask);
+[merged_time, merged_dataset, sync_marker_dict, topics] = bag_analyzer_obj.synchronization(1/fs);
 
 % Renamed Markers
 sync_marker_dict = rename_markers(sync_marker_dict);
