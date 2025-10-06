@@ -256,7 +256,7 @@ classdef Bag_Analyzer < handle
                     clear fake_data fake_dataset
                 else
                     merged_dataset{i} = interp1(obj.topics_ts{i}.Time', obj.topics_ts{i}.Data', ...
-                                                    merged_time', options.method);
+                                                    merged_time', options.interpolation_method);
 
                     % Transposing, I like more column notation
                     merged_dataset{i} = merged_dataset{i}';
@@ -278,7 +278,7 @@ classdef Bag_Analyzer < handle
                 marker_names = string(fieldnames(obj.marker_dictionary));
 
                 for j = 1:length(marker_names)
-                    obj.marker_dictionary.(marker_names(j)) = interp1(obj.topics_ts{idx}.Time', obj.marker_dictionary.(marker_names(j))', merged_time', method)';
+                    obj.marker_dictionary.(marker_names(j)) = interp1(obj.topics_ts{idx}.Time', obj.marker_dictionary.(marker_names(j))', merged_time', options.interpolation_method)';
                 end
             end
         
