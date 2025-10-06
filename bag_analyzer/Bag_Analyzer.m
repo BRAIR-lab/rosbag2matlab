@@ -215,14 +215,13 @@ classdef Bag_Analyzer < handle
         end
 
         % Synchronization
-        function [merged_time, merged_dataset, sync_marker_dic, topics] = synchronization(obj, resampling_period, mask)
+        function [merged_time, merged_dataset, sync_marker_dic, topics] = synchronization(obj, resampling_period, mask, options)
             arguments
                 obj
                 resampling_period = 1.0e+2;
                 mask = true*ones(1, obj.n_topics);
+                options.interpolation_method = 'linear';
             end
-
-            method = 'previous'; % hardcoded for the image
 
             % Merged Time Definition
             merged_time = 0:resampling_period:obj.bag_duration;
@@ -241,8 +240,10 @@ classdef Bag_Analyzer < handle
                     % Just reordering the samples index and after assign
                     % it. Of course, we have to manage the NaN case.
                     fake_data = (1:length(obj.topics_ts{i}.Time))';
+                    
+                    % hardcoded previous method for images
                     fake_dataset = interp1(obj.topics_ts{i}.Time', fake_data, ...
-                                                    merged_time', method);
+                                                    merged_time', 'previous');
                     for j = 1:length(fake_dataset)
                         if isnan(fake_dataset(j))
                             % Fill Image with NaN
@@ -255,7 +256,7 @@ classdef Bag_Analyzer < handle
                     clear fake_data fake_dataset
                 else
                     merged_dataset{i} = interp1(obj.topics_ts{i}.Time', obj.topics_ts{i}.Data', ...
-                                                    merged_time', method);
+                                                    merged_time', options.method);
 
                     % Transposing, I like more column notation
                     merged_dataset{i} = merged_dataset{i}';
@@ -265,7 +266,6 @@ classdef Bag_Analyzer < handle
                 topics{i} = obj.topic_names{i};
             end
 
-            % idx = 
             %% Synchronize Marker Dictionary
             vicon_idx = find(strcmp(obj.msg_type, "vicon_bridge/Markers"), 1, 'last');
             optitrack_idx = find(strcmp(obj.msg_type, "dynamic_manipulation_dlo/MarkerRigidBodyPoses"), 1, 'last');
