@@ -132,7 +132,7 @@ classdef Bag_Analyzer < handle
                     end
 
                  case 'vicon_bridge/Markers'
-                     [~, obj.marker_dictionary] = marker_management(msg_cell, "skip_unknown", true);
+                     [msg_data, obj.marker_dictionary] = marker_management(msg_cell, "skip_unknown", true);
 
                 case 'sensor_msgs/PointCloud'
                     % Read only the first instant the number of markers.
