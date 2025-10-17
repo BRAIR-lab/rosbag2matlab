@@ -64,12 +64,18 @@ classdef Bag_Analyzer < handle
 
             switch msg_cell{1}.MessageType
                 case 'sensor_msgs/Image'
+                    % % Init
+                    % msg_data = NaN*ones([size(rosReadImage(msg_cell{1})), num_msgs]);
+
                     % Extract Image
                     for i = 1:num_msgs
                         msg_data(:, :, :, i) = rosReadImage(msg_cell{i});
                     end
                  
                 case 'sensor_msgs/CompressedImage'
+                    % % Init
+                    % msg_data = NaN*ones([size(rosReadImage(msg_cell{1})), num_msgs]);
+
                     % Extract Image
                     for i = 1:num_msgs
                         msg_data(:, :, :, i) = rosReadImage(msg_cell{i});
