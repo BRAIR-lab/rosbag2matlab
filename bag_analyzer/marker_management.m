@@ -58,8 +58,8 @@ function [msg_data, marker_dict] = marker_management(msg_cell, options)
         for j = 1:length(msg_cell{i}.Markers_) % Iterate through markers present at this time
             
             marker = msg_cell{i}.Markers_(j);
-            marker_name = marker.MarkerName;
-            % marker_name = convertStringsToChars(string(marker.SubjectName) + "/" + string(marker.MarkerName));
+            % marker_name = marker.MarkerName;
+            marker_name = convertStringsToChars(string(marker.SubjectName) + "/" + string(marker.MarkerName));
             
             % If the marker name exists in our map, place its data in the correct rows
             if isKey(marker_map, marker_name)
