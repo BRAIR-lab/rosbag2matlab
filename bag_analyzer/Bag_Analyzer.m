@@ -26,6 +26,7 @@ classdef Bag_Analyzer < handle
 
         %% Preferences
         quaternion_order
+        use_parallel
     end
 
     %% Methods
@@ -35,12 +36,14 @@ classdef Bag_Analyzer < handle
             arguments
                 bag_name
                 options.quaternion_order = "wxyz";
+                options.use_parallel = false;
             end
             % Init Bag Object
             obj.bag_obj = rosbag(bag_name);
 
             % Quaternion Order
             obj.quaternion_order = options.quaternion_order;
+            obj.use_parallel = options.use_parallel;
 
             % Time Information
             obj.start_time = obj.bag_obj.StartTime;
@@ -64,21 +67,33 @@ classdef Bag_Analyzer < handle
 
             switch msg_cell{1}.MessageType
                 case 'sensor_msgs/Image'
-                    % % Init
-                    % msg_data = NaN*ones([size(rosReadImage(msg_cell{1})), num_msgs]);
+                    % Init
+                    msg_data = NaN*ones([size(rosReadImage(msg_cell{1})), num_msgs]);
 
                     % Extract Image
-                    for i = 1:num_msgs
-                        msg_data(:, :, :, i) = rosReadImage(msg_cell{i});
+                    if obj.use_parallel
+                        parfor i = 1:num_msgs
+                            msg_data(:, :, :, i) = rosReadImage(msg_cell{i});
+                        end
+                    else
+                        for i = 1:num_msgs
+                            msg_data(:, :, :, i) = rosReadImage(msg_cell{i});
+                        end
                     end
-                 
+
                 case 'sensor_msgs/CompressedImage'
-                    % % Init
-                    % msg_data = NaN*ones([size(rosReadImage(msg_cell{1})), num_msgs]);
+                    % Init
+                    msg_data = NaN*ones([size(rosReadImage(msg_cell{1})), num_msgs]);
 
                     % Extract Image
-                    for i = 1:num_msgs
-                        msg_data(:, :, :, i) = rosReadImage(msg_cell{i});
+                    if obj.use_parallel
+                        parfor i = 1:num_msgs
+                            msg_data(:, :, :, i) = rosReadImage(msg_cell{i});
+                        end
+                    else
+                        for i = 1:num_msgs
+                            msg_data(:, :, :, i) = rosReadImage(msg_cell{i});
+                        end
                     end
                  
                 case 'std_msgs/Float32MultiArray'
