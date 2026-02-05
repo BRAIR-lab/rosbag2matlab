@@ -105,6 +105,11 @@ classdef Bag_Analyzer < handle
                         end
                     end
 
+                case 'sensor_msgs/JointState'
+                    for i = 1:num_msgs
+                        msg_data(:, i) = [msg_cell{i}.Position; msg_cell{i}.Velocity; msg_cell{i}.Effort];
+                    end
+
                 case 'geometry_msgs/PoseStamped'
                     for i = 1:num_msgs
                         % Save RigidBodyPose
