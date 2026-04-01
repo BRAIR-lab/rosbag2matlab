@@ -66,26 +66,15 @@ classdef Bag_Analyzer < handle
             num_msgs = length(msg_cell);
 
             switch msg_cell{1}.MessageType
-                case 'sensor_msgs/Image'
-                    % Init
-                    msg_data = NaN*ones([size(rosReadImage(msg_cell{1})), num_msgs]);
+                case {'sensor_msgs/Image', 'sensor_msgs/CompressedImage'}
+                    % 1. Get image size
+                    first_img = rosReadImage(msg_cell{1});
+                    img_size = size(first_img);
+                    
+                    % 2. Preallocate using uint8 (zeros instead of NaN to save massive amounts of memory)
+                    msg_data = zeros([img_size, num_msgs], 'uint8');
 
-                    % Extract Image
-                    if obj.use_parallel
-                        parfor i = 1:num_msgs
-                            msg_data(:, :, :, i) = rosReadImage(msg_cell{i});
-                        end
-                    else
-                        for i = 1:num_msgs
-                            msg_data(:, :, :, i) = rosReadImage(msg_cell{i});
-                        end
-                    end
-
-                case 'sensor_msgs/CompressedImage'
-                    % Init
-                    msg_data = NaN*ones([size(rosReadImage(msg_cell{1})), num_msgs]);
-
-                    % Extract Image
+                    % 3. Extract Image
                     if obj.use_parallel
                         parfor i = 1:num_msgs
                             msg_data(:, :, :, i) = rosReadImage(msg_cell{i});
@@ -97,7 +86,6 @@ classdef Bag_Analyzer < handle
                     end
                  
                 case 'std_msgs/Float32MultiArray'
-                    % msg_data = msg_cell;
                     for i = 1:num_msgs
                         msg = double(msg_cell{i}.Data);
 
@@ -109,7 +97,6 @@ classdef Bag_Analyzer < handle
                     end
 
                 case 'std_msgs/Float64MultiArray'
-                    % msg_data = msg_cell;
                     for i = 1:num_msgs
                         msg = double(msg_cell{i}.Data);
 
@@ -261,25 +248,33 @@ classdef Bag_Analyzer < handle
 
                 % Merge Dataset
                 if (obj.msg_type{i} == "sensor_msgs/Image") || (obj.msg_type{i} == "sensor_msgs/CompressedImage")
-                    % Due to the unsupport of interp1() for 4d matrix,
-                    % I tried this alternative solution:
-                    % Just reordering the samples index and after assign
-                    % it. Of course, we have to manage the NaN case.
+                    
+                    % Get indices
                     fake_data = (1:length(obj.topics_ts{i}.Time))';
                     
-                    % hardcoded previous method for images
+                    % Interpolate indices using 'previous'
                     fake_dataset = interp1(obj.topics_ts{i}.Time', fake_data, ...
-                                                    merged_time', 'previous');
-                    for j = 1:length(fake_dataset)
-                        if isnan(fake_dataset(j))
-                            % Fill Image with NaN
-                            merged_dataset{i}(:, :, :, j) = uint8(NaN*ones(size(obj.topics_ts{i}.Data(:, :, :, 1))));
-                        else
+                                            merged_time', 'previous');
+                    
+                    % --- THE FIX ---
+                    % 1. Get the size of a single frame
+                    single_frame_size = size(obj.topics_ts{i}.Data(:, :, :, 1));
+                    num_sync_frames = length(merged_time);
+                    
+                    % 2. Preallocate the entire synchronized dataset with zeros (uint8)
+                    % This is MUCH faster and uses a fraction of the RAM.
+                    merged_dataset{i} = zeros([single_frame_size, num_sync_frames], 'uint8');
+                    
+                    % 3. Fill the dataset
+                    for j = 1:num_sync_frames
+                        % If fake_dataset(j) is NaN, it means there is no previous frame yet.
+                        % We just skip it, leaving the preallocated zeros (black frame) in place.
+                        if ~isnan(fake_dataset(j))
                             merged_dataset{i}(:, :, :, j) = obj.topics_ts{i}.Data(:, :, :, fake_dataset(j));
                         end
                     end
 
-                    clear fake_data fake_dataset
+                    clear fake_data fake_dataset single_frame_size num_sync_frames
                 else
                     merged_dataset{i} = interp1(obj.topics_ts{i}.Time', obj.topics_ts{i}.Data', ...
                                                     merged_time', options.interpolation_method);
