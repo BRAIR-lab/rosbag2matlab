@@ -64,6 +64,10 @@ classdef Bag_Analyzer < handle
         function msg_data = extractData(obj, msg_cell)
             % Init
             num_msgs = length(msg_cell);
+            if num_msgs == 0
+                msg_data = [];
+                return;
+            end
 
             switch msg_cell{1}.MessageType
                 case {'sensor_msgs/Image', 'sensor_msgs/CompressedImage'}
@@ -71,7 +75,7 @@ classdef Bag_Analyzer < handle
                     first_img = rosReadImage(msg_cell{1});
                     img_size = size(first_img);
                     
-                    % 2. Preallocate using uint8 (zeros instead of NaN to save massive amounts of memory)
+                    % 2. Preallocate using uint8
                     msg_data = zeros([img_size, num_msgs], 'uint8');
 
                     % 3. Extract Image
@@ -84,37 +88,45 @@ classdef Bag_Analyzer < handle
                             msg_data(:, :, :, i) = rosReadImage(msg_cell{i});
                         end
                     end
-                 
+                
                 case 'std_msgs/Float32MultiArray'
+                    % Preallocate based on the first message (filling with NaN for safety on empty msgs)
+                    first_msg = double(msg_cell{1}.Data);
+                    msg_data = NaN(length(first_msg), num_msgs);
+                    
                     for i = 1:num_msgs
                         msg = double(msg_cell{i}.Data);
-
-                        if(isempty(msg))
-                            msg_data(:, i) = NaN;
-                        else
+                        if ~isempty(msg)
                             msg_data(:, i) = msg;
                         end
                     end
 
                 case 'std_msgs/Float64MultiArray'
+                    first_msg = double(msg_cell{1}.Data);
+                    msg_data = NaN(length(first_msg), num_msgs);
+                    
                     for i = 1:num_msgs
                         msg = double(msg_cell{i}.Data);
-
-                        if(isempty(msg))
-                            msg_data(:, i) = NaN;
-                        else
+                        if ~isempty(msg)
                             msg_data(:, i) = msg;
                         end
                     end
 
                 case 'sensor_msgs/JointState'
+                    % Determine total rows needed from position, velocity, effort arrays
+                    pos_len = length(msg_cell{1}.Position);
+                    vel_len = length(msg_cell{1}.Velocity);
+                    eff_len = length(msg_cell{1}.Effort);
+                    msg_data = zeros(pos_len + vel_len + eff_len, num_msgs);
+                    
                     for i = 1:num_msgs
                         msg_data(:, i) = [msg_cell{i}.Position; msg_cell{i}.Velocity; msg_cell{i}.Effort];
                     end
 
                 case 'geometry_msgs/PoseStamped'
+                    msg_data = zeros(7, num_msgs); % 3 for pos + 4 for quat
+                    
                     for i = 1:num_msgs
-                        % Save RigidBodyPose
                         if obj.quaternion_order == "wxyz"
                             msg_data(:, i) = [msg_cell{i}.Pose.Position.X; msg_cell{i}.Pose.Position.Y; msg_cell{i}.Pose.Position.Z;
                                             msg_cell{i}.Pose.Orientation.W; msg_cell{i}.Pose.Orientation.X; msg_cell{i}.Pose.Orientation.Y; msg_cell{i}.Pose.Orientation.Z];
@@ -125,6 +137,8 @@ classdef Bag_Analyzer < handle
                     end
                 
                 case 'geometry_msgs/TransformStamped'
+                    msg_data = zeros(7, num_msgs);
+                    
                     for i = 1:num_msgs
                         se3_data = msg_cell{i}.Transform;
                         msg_data(:, i) = [se3_data.Translation.X; se3_data.Translation.Y; se3_data.Translation.Z;
@@ -132,61 +146,76 @@ classdef Bag_Analyzer < handle
                     end
 
                 case 'geometry_msgs/PointStamped'
-                    % msg_data = msg_cell;
+                    msg_data = zeros(3, num_msgs);
+                    
                     for i = 1:num_msgs
                         msg_data(:, i) = [msg_cell{i}.Point.X; msg_cell{i}.Point.Y; msg_cell{i}.Point.Z];
                     end
 
                 case 'geometry_msgs/WrenchStamped'
-                    % msg_data = msg_cell;
+                    msg_data = zeros(6, num_msgs); % 3 force + 3 torque
+                    
                     for i = 1:num_msgs
                         msg_data(:, i) = [msg_cell{i}.Wrench.Force.X; msg_cell{i}.Wrench.Force.Y; msg_cell{i}.Wrench.Force.Z;
-                                          msg_cell{i}.Wrench.Torque.X; msg_cell{i}.Wrench.Torque.Y; msg_cell{i}.Wrench.Torque.Z];
+                                        msg_cell{i}.Wrench.Torque.X; msg_cell{i}.Wrench.Torque.Y; msg_cell{i}.Wrench.Torque.Z];
                     end
 
-                 case 'vicon_bridge/Markers'
-                     [msg_data, obj.marker_dictionary] = marker_management(msg_cell, "skip_unknown", true);
+                case 'vicon_bridge/Markers'
+                    [msg_data, obj.marker_dictionary] = marker_management(msg_cell, "skip_unknown", true);
 
                 case 'sensor_msgs/PointCloud'
-                    % Read only the first instant the number of markers.
+                    % Preallocate based on the number of points in the first message
+                    n_points = length(msg_cell{1}.Points);
+                    msg_data = zeros(n_points * 3, num_msgs);
+                    
                     for i = 1:num_msgs
-                        n_points = length(msg_cell{i}.Points);
-                        % Fill vector
-                        points_pos = [];
-                        for j = 1:n_points
-                            single_point = double([msg_cell{i}.Points(j).X; msg_cell{i}.Points(j).Y; msg_cell{i}.Points(j).Z]);
-                            points_pos = [points_pos; single_point];
+                        pts = msg_cell{i}.Points;
+                        % Preallocate the column vector to avoid inner-loop reallocation
+                        points_pos = zeros(length(pts) * 3, 1); 
+                        
+                        for j = 1:length(pts)
+                            idx = (j-1)*3 + 1;
+                            points_pos(idx:idx+2) = [pts(j).X; pts(j).Y; pts(j).Z];
                         end
-                        msg_data(:, i) = points_pos;   % [m]
+                        
+                        % Handle potential size mismatches safely if N points changes over time
+                        if length(points_pos) == size(msg_data, 1)
+                            msg_data(:, i) = points_pos;
+                        else
+                            msg_data(1:length(points_pos), i) = points_pos; 
+                        end
                     end
 
                 case 'sensor_msgs/PointCloud2'
-                    % Read only the first instant the number of markers.
+                    % Determine data size efficiently using the first message
+                    first_points = double(rosReadXYZ(msg_cell{1})');
+                    msg_data = zeros(numel(first_points), num_msgs); 
+                    
                     for i = 1:num_msgs
                         points = double(rosReadXYZ(msg_cell{i})');
-                        points = reshape(points, size(points, 1)*size(points, 2), 1);
-                        msg_data(:, i) = points;   % [m]
+                        msg_data(:, i) = points(:); % Using (:) is much faster than reshape()
                     end
 
                 case 'dynamic_manipulation_dlo/MarkerRigidBodyPoses'
-                    % msg_data = msg_cell;
+                    msg_data = zeros(7, num_msgs);
+                    vicon_format_markers = cell(1, num_msgs); % Preallocate cell array
+                    
                     for i = 1:num_msgs
                         % Save RigidBodyPose
                         if obj.quaternion_order == "wxyz"
                             msg_data(:, i) = [msg_cell{i}.RigidBodyPose.Position.X; msg_cell{i}.RigidBodyPose.Position.Y; msg_cell{i}.RigidBodyPose.Position.Z;
-                                                msg_cell{i}.RigidBodyPose.Orientation.W; msg_cell{i}.RigidBodyPose.Orientation.X; msg_cell{i}.RigidBodyPose.Orientation.Y; msg_cell{i}.RigidBodyPose.Orientation.Z];
+                                            msg_cell{i}.RigidBodyPose.Orientation.W; msg_cell{i}.RigidBodyPose.Orientation.X; msg_cell{i}.RigidBodyPose.Orientation.Y; msg_cell{i}.RigidBodyPose.Orientation.Z];
                         elseif obj.quaternion_order == "xyzw"
                             msg_data(:, i) = [msg_cell{i}.RigidBodyPose.Position.X; msg_cell{i}.RigidBodyPose.Position.Y; msg_cell{i}.RigidBodyPose.Position.Z;
-                                                msg_cell{i}.RigidBodyPose.Orientation.X; msg_cell{i}.RigidBodyPose.Orientation.Y; msg_cell{i}.RigidBodyPose.Orientation.Z; msg_cell{i}.RigidBodyPose.Orientation.W];
+                                            msg_cell{i}.RigidBodyPose.Orientation.X; msg_cell{i}.RigidBodyPose.Orientation.Y; msg_cell{i}.RigidBodyPose.Orientation.Z; msg_cell{i}.RigidBodyPose.Orientation.W];
                         end
 
                         % Marker Management
                         if(~isempty(msg_cell{i}.MarkerIds))
-                            % Reuse marker_management converting in VICON
-                            % Format
                             n_markers = length(msg_cell{i}.MarkerIds);
+                            % Preallocate the struct array to avoid fragmentation
+                            vicon_format_markers{i}.Markers_ = repmat(struct('Occluded', 0, 'SubjectName', '', 'MarkerName', '', 'Translation', struct('X', 0, 'Y', 0, 'Z', 0)), 1, n_markers);
                             
-                            % for each marker
                             for j = 1:n_markers
                                 vicon_format_markers{i}.Markers_(j).Occluded = 0;
                                 vicon_format_markers{i}.Markers_(j).SubjectName = '';
@@ -198,7 +227,7 @@ classdef Bag_Analyzer < handle
                         end
                     end
 
-                    % Marker Management
+                    % Marker Management Finalization
                     if(~all(cellfun(@(x) isempty(x.MarkerIds), msg_cell)))
                         [~, obj.marker_dictionary] = marker_management(vicon_format_markers, "skip_unknown", true, ...
                                                                         "replace_style", 'delete', "preserve_order", true);
