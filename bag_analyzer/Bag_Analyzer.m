@@ -267,6 +267,8 @@ classdef Bag_Analyzer < handle
 
             % Merged Time Definition
             merged_time = 0:resampling_period:obj.bag_duration;
+            merged_dataset = cell(1, obj.n_topics);
+            topics = cell(1, obj.n_topics);
 
             % Interpolate
             for i = 1:obj.n_topics
