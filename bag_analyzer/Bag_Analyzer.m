@@ -256,15 +256,15 @@ classdef Bag_Analyzer < handle
             end
         end
 
-        % Synchronization (Master Clock Approach)
+        % Synchronization (4D Array + Master Clock Approach)
         function [merged_time, merged_dataset, sync_marker_dic, topics] = synchronization(obj, resampling_period, mask, options)
             arguments
                 obj
                 resampling_period = 1.0e+2;
-                mask = true * ones(1, obj.n_topics);
+                mask = true*ones(1, obj.n_topics);
                 options.interpolation_method = 'linear';
             end
-            
+
             % 1. Determine the Master Clock (Look for Image Topic)
             image_idx = find(strcmp(obj.msg_type, "sensor_msgs/Image") | strcmp(obj.msg_type, "sensor_msgs/CompressedImage"), 1);
             
@@ -272,93 +272,91 @@ classdef Bag_Analyzer < handle
                 % Use exact camera timestamps as the Master Clock (0 frame drops)
                 merged_time = obj.topics_ts{image_idx}.Time';
                 disp(['Using image topic (', obj.topic_names{image_idx}, ') as the Master Clock.']);
-                
-                % Calculate the native average FPS for the VideoWriter playback speed
-                avg_fps = length(merged_time) / (merged_time(end) - merged_time(1));
             else
                 % Fallback: Use standard resampling grid if no camera is present
                 merged_time = 0:resampling_period:obj.bag_duration;
                 disp('No image topic found. Using standard resampling grid.');
-                avg_fps = 1 / resampling_period;
             end
-            
+
             % Initialize outputs
             merged_dataset = cell(1, obj.n_topics);
             topics = cell(1, obj.n_topics);
-            
+
             % 2. Process and Interpolate Each Topic
             for i = 1:obj.n_topics
-                % Skip unsupported or masked topics
+                % Temporarily skip for unsupported msg types or masked topics
                 if (length(obj.topics_ts{i}) ~= 1) || (~mask(i))
                     continue;
                 end
-                
-                % Check if the current topic is an image
+
+                % Merge Dataset
                 if (obj.msg_type{i} == "sensor_msgs/Image") || (obj.msg_type{i} == "sensor_msgs/CompressedImage")
                     
-                    % Create a safe filename for the video (replace slashes)
-                    safe_topic_name = strrep(obj.topic_names{i}, '/', '_');
-                    video_filename = sprintf('.%s_sync.mp4', safe_topic_name);
-                    
-                    % Setup VideoWriter
-                    v = VideoWriter(video_filename, 'MPEG-4');
-                    v.FrameRate = avg_fps;
-                    open(v);
-                    
-                    disp(['Streaming master-clock synchronized video directly to ', video_filename, '...']);
-                    
-                    % Write native frames directly to disk
-                    num_frames = length(obj.topics_ts{i}.Time);
-                    for j = 1:num_frames
-                        % Because merged_time IS this topic's time, we simply write them sequentially
-                        writeVideo(v, obj.topics_ts{i}.Data(:, :, :, j));
+                    if i == image_idx
+                        % --- MAIN CAMERA (MASTER CLOCK) ---
+                        % Because merged_time perfectly matches this camera's time, 
+                        % we drop 0 frames and can just copy the 4D array directly!
+                        merged_dataset{i} = obj.topics_ts{i}.Data;
+                    else
+                        % --- SECONDARY CAMERA ---
+                        % If you have a second camera in the bag, it must be interpolated to the master clock
+                        fake_data = (1:length(obj.topics_ts{i}.Time))';
+                        fake_dataset = interp1(obj.topics_ts{i}.Time', fake_data, ...
+                                                merged_time', 'previous');
+                        
+                        % Preallocate 4D Array
+                        single_frame_size = size(obj.topics_ts{i}.Data(:, :, :, 1));
+                        num_sync_frames = length(merged_time);
+                        merged_dataset{i} = zeros([single_frame_size, num_sync_frames], 'uint8');
+                        
+                        for j = 1:num_sync_frames
+                            if ~isnan(fake_dataset(j))
+                                merged_dataset{i}(:, :, :, j) = obj.topics_ts{i}.Data(:, :, :, fake_dataset(j));
+                            end
+                        end
+                        clear fake_data fake_dataset single_frame_size num_sync_frames
                     end
-                    close(v);
-                    
-                    % Store a lightweight reference string instead of a massive RAM array
-                    merged_dataset{i} = sprintf('Master-sync video saved to disk: %s', video_filename);
-                    
                 else
-                    % Continuous 1D Data: Interpolate to the Master Clock timestamps
+                    % --- SENSOR DATA (1D Arrays) ---
+                    % Interpolate continuous sensor data to match the master clock
                     merged_dataset{i} = interp1(obj.topics_ts{i}.Time', obj.topics_ts{i}.Data', ...
-                                                    merged_time, options.interpolation_method);
-                    % Transpose to maintain column notation
+                                                    merged_time', options.interpolation_method);
+
+                    % Transposing, I like more column notation
                     merged_dataset{i} = merged_dataset{i}';
                 end
-                
+
                 % Store topic names
                 topics{i} = obj.topic_names{i};
             end
-            
-            % 3. Synchronize Marker Dictionary
+
+            %% 3. Synchronize Marker Dictionary
             vicon_idx = find(strcmp(obj.msg_type, "vicon_bridge/Markers"), 1, 'last');
             optitrack_idx = find(strcmp(obj.msg_type, "dynamic_manipulation_dlo/MarkerRigidBodyPoses"), 1, 'last');
-            
-            % Grab the first available marker index to safely use for timing reference
+
+            % Safely grab the valid index (prevents array dimensions error)
             marker_timing_idx = [];
             if ~isempty(vicon_idx)
                 marker_timing_idx = vicon_idx;
             elseif ~isempty(optitrack_idx)
                 marker_timing_idx = optitrack_idx;
             end
-            
+
             if ~isempty(marker_timing_idx)
                 marker_names = string(fieldnames(obj.marker_dictionary));
                 for j = 1:length(marker_names)
-                    % Interpolate markers to the new master clock
                     obj.marker_dictionary.(marker_names(j)) = interp1(obj.topics_ts{marker_timing_idx}.Time', ...
-                        obj.marker_dictionary.(marker_names(j))', merged_time, options.interpolation_method)';
+                        obj.marker_dictionary.(marker_names(j))', merged_time', options.interpolation_method)';
                 end
             end
         
             % 4. Final Cleanup
+            % Remove Skipped Topics
             merged_dataset = merged_dataset(~cellfun('isempty', merged_dataset));
-            topics = topics(~cellfun('isempty', topics)); % Clean up empty topics too
-            
+            topics = topics(~cellfun('isempty', topics)); % Clean empty topics to keep indices aligned
+
             % Updated Marker Dictionary
             sync_marker_dic = obj.marker_dictionary;
-            
-            disp('Synchronization complete! Check your working directory for the .mp4 file.');
         end
     end
 end
