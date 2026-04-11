@@ -283,9 +283,11 @@ classdef Bag_Analyzer < handle
                     % Get indices
                     fake_data = (1:length(obj.topics_ts{i}.Time))';
                     
-                    % Interpolate indices using 'previous'
-                    fake_dataset = interp1(obj.topics_ts{i}.Time', fake_data, ...
-                                            merged_time', 'previous');
+                    % % Interpolate indices using 'previous'
+                    % fake_dataset = interp1(obj.topics_ts{i}.Time', fake_data, merged_time', 'previous');
+
+                    % Interpolate with 'nearest'
+                    fake_dataset = interp1(obj.topics_ts{i}.Time', fake_data, merged_time', 'nearest', 'extrap');
                     
                     % --- THE FIX ---
                     % 1. Get the size of a single frame
