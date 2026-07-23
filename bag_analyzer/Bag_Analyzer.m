@@ -91,27 +91,42 @@ classdef Bag_Analyzer < handle
         end
 
         function msg_data = extractData(obj, msg_cell)
-            % CONFIRMED CRASH for ROS2 (probe_bag_analyzer_e2e.m, synthetic
-            % ros2bagwriter bag): every case below that reaches into
-            % message sub-fields (Pose.Position.X, Transform.Translation.X,
-            % Wrench.Force.X, Position/Velocity/Effort, Point.X, ...)
-            % assumes ROS1's PascalCase struct field naming. A real ROS2
-            % bag's struct output uses lowercase field names instead
-            % (verified: geometry_msgs/PoseStamped decodes to
-            % msg.pose.position.x, not msg.Pose.Position.X -- only the
-            % MATLAB-injected MessageType field stays capitalized). This is
-            % not silently-wrong data: end-to-end Bag_Analyzer(ros2_bag_dir)
-            % throws "Unrecognized field name 'Pose'" the moment a
-            % PoseStamped (or any other structured) message is decoded.
-            % This was NOT one of the originally flagged dispatch points
-            % and is NOT fixed here: it needs a field-case dispatch (or a
-            % case-insensitive accessor) added to every branch below, plus
-            % real ROS2 messages of each type to confirm field names beyond
-            % PoseStamped. Dispatch points 1-5 in the constructor/
-            % extractMsgs (bag open, time, topic list, select/readMessages,
-            % timestamps) are ROS2-correct and verified; this switch is
-            % not -- ROS2 bags will currently crash on their first
-            % structured message.
+            % FIXED for ROS2 (was: CONFIRMED CRASH, probe_bag_analyzer_e2e.m).
+            % Every case below that reaches into message sub-fields
+            % (Pose.Position.X, Transform.Translation.X, Wrench.Force.X,
+            % Position/Velocity/Effort, Point.X, ...) used to assume ROS1's
+            % PascalCase struct field naming, which crashed on a real ROS2
+            % bag's lowercase field names ("Unrecognized field name
+            % 'Pose'"). All STANDARD message types below (std_msgs,
+            % sensor_msgs/JointState, geometry_msgs/*) now go through
+            % Bag_Analyzer.gf(), a dual-case field accessor: tries the
+            % ROS1 PascalCase name first, falls back to the same name with
+            % its first letter lowercased (ROS2's convention for these
+            % single-word field names) otherwise. Verified two ways:
+            % (1) a real ROS2 bag (rosbag2matlab/bags/ros2bags/
+            % collocated_cycle_2026_06_26-19_09_51/, see
+            % inspect_real_ros2_bag.m) directly confirms sensor_msgs/
+            % JointState (position/velocity/effort) and std_msgs/
+            % Float64MultiArray (data), plus the nested pose.position/
+            % pose.orientation pattern via a visualization_msgs/Marker
+            % message on that bag; (2) the remaining geometry_msgs types
+            % (Transform, Wrench, Point) follow the same single-word
+            % lower-first-letter convention per the public ROS2
+            % geometry_msgs interface definitions (translation/rotation,
+            % force/torque, x/y/z), not just an assumption.
+            %
+            % NOT fixed -- left PascalCase-only, still ROS1-shaped:
+            % 'vicon_bridge/Markers' and 'dynamic_manipulation_dlo/
+            % MarkerRigidBodyPoses'. Both are custom message types with no
+            % ROS2 equivalent found in the real bag above (it uses
+            % different custom types instead: candle_ros2/*,
+            % mocap_optitrack_interfaces/*, neither of which MATLAB could
+            % even decode without ros2genmsg). Their multi-word fields
+            % (MarkerIds, MarkerPoses, RigidBodyPose) may follow ROS2's
+            % snake_case convention rather than the simple lower-first-
+            % letter rule verified above for single-word fields -- do not
+            % assume gf() applies here without checking the real .msg
+            % source or a bag that actually contains one of these topics.
             % Init
             num_msgs = length(msg_cell);
             if num_msgs == 0
@@ -141,11 +156,11 @@ classdef Bag_Analyzer < handle
 
                 case 'std_msgs/Float32MultiArray'
                     % Preallocate based on the first message
-                    first_msg = double(msg_cell{1}.Data);
+                    first_msg = double(Bag_Analyzer.gf(msg_cell{1}, 'Data'));
                     msg_data = NaN(length(first_msg), num_msgs);
 
                     for i = 1:num_msgs
-                        msg = double(msg_cell{i}.Data);
+                        msg = double(Bag_Analyzer.gf(msg_cell{i}, 'Data'));
                         if ~isempty(msg)
                             n = min(numel(msg), size(msg_data, 1));
                             msg_data(1:n, i) = msg(1:n);
@@ -153,11 +168,12 @@ classdef Bag_Analyzer < handle
                     end
 
                 case 'std_msgs/Float64MultiArray'
-                    first_msg = double(msg_cell{1}.Data);
+                    % Field name VERIFIED against a real ROS2 bag (data, not Data).
+                    first_msg = double(Bag_Analyzer.gf(msg_cell{1}, 'Data'));
                     msg_data = NaN(length(first_msg), num_msgs);
 
                     for i = 1:num_msgs
-                        msg = double(msg_cell{i}.Data);
+                        msg = double(Bag_Analyzer.gf(msg_cell{i}, 'Data'));
                         if ~isempty(msg)
                             n = min(numel(msg), size(msg_data, 1));
                             msg_data(1:n, i) = msg(1:n);
@@ -165,14 +181,18 @@ classdef Bag_Analyzer < handle
                     end
 
                 case 'sensor_msgs/JointState'
+                    % Field names VERIFIED against a real ROS2 bag
+                    % (position/velocity/effort, not Position/Velocity/Effort).
                     % Determine total rows needed from position, velocity, effort arrays
-                    pos_len = length(msg_cell{1}.Position);
-                    vel_len = length(msg_cell{1}.Velocity);
-                    eff_len = length(msg_cell{1}.Effort);
+                    pos_len = length(Bag_Analyzer.gf(msg_cell{1}, 'Position'));
+                    vel_len = length(Bag_Analyzer.gf(msg_cell{1}, 'Velocity'));
+                    eff_len = length(Bag_Analyzer.gf(msg_cell{1}, 'Effort'));
                     msg_data = zeros(pos_len + vel_len + eff_len, num_msgs);
 
                     for i = 1:num_msgs
-                        msg_data(:, i) = [msg_cell{i}.Position; msg_cell{i}.Velocity; msg_cell{i}.Effort];
+                        msg_data(:, i) = [Bag_Analyzer.gf(msg_cell{i}, 'Position'); ...
+                                           Bag_Analyzer.gf(msg_cell{i}, 'Velocity'); ...
+                                           Bag_Analyzer.gf(msg_cell{i}, 'Effort')];
                     end
 
                 case 'geometry_msgs/PoseStamped'
@@ -186,44 +206,59 @@ classdef Bag_Analyzer < handle
                     msg_data = Bag_Analyzer.decodePoseStamped(msg_cell, obj.quaternion_order);
 
                 case 'geometry_msgs/TransformStamped'
+                    % Field names per the public ROS2 geometry_msgs/Transform
+                    % interface definition (translation/rotation, not
+                    % Translation/Rotation) -- same single-word
+                    % lower-first-letter convention verified above.
                     msg_data = zeros(7, num_msgs);
 
                     for i = 1:num_msgs
-                        se3_data = msg_cell{i}.Transform;
-                        msg_data(:, i) = [se3_data.Translation.X; se3_data.Translation.Y; se3_data.Translation.Z;
-                                        se3_data.Rotation.W; se3_data.Rotation.X; se3_data.Rotation.Y; se3_data.Rotation.Z];
+                        se3_data = Bag_Analyzer.gf(msg_cell{i}, 'Transform');
+                        trans = Bag_Analyzer.gf(se3_data, 'Translation');
+                        rot = Bag_Analyzer.gf(se3_data, 'Rotation');
+                        msg_data(:, i) = [Bag_Analyzer.gf(trans,'X'); Bag_Analyzer.gf(trans,'Y'); Bag_Analyzer.gf(trans,'Z');
+                                        Bag_Analyzer.gf(rot,'W'); Bag_Analyzer.gf(rot,'X'); Bag_Analyzer.gf(rot,'Y'); Bag_Analyzer.gf(rot,'Z')];
                     end
 
                 case 'geometry_msgs/PointStamped'
                     msg_data = zeros(3, num_msgs);
 
                     for i = 1:num_msgs
-                        msg_data(:, i) = [msg_cell{i}.Point.X; msg_cell{i}.Point.Y; msg_cell{i}.Point.Z];
+                        pt = Bag_Analyzer.gf(msg_cell{i}, 'Point');
+                        msg_data(:, i) = [Bag_Analyzer.gf(pt,'X'); Bag_Analyzer.gf(pt,'Y'); Bag_Analyzer.gf(pt,'Z')];
                     end
 
                 case 'geometry_msgs/WrenchStamped'
+                    % Field names per the public ROS2 geometry_msgs/Wrench
+                    % interface definition (force/torque, not Force/Torque).
                     msg_data = zeros(6, num_msgs); % 3 force + 3 torque
 
                     for i = 1:num_msgs
-                        msg_data(:, i) = [msg_cell{i}.Wrench.Force.X; msg_cell{i}.Wrench.Force.Y; msg_cell{i}.Wrench.Force.Z;
-                                        msg_cell{i}.Wrench.Torque.X; msg_cell{i}.Wrench.Torque.Y; msg_cell{i}.Wrench.Torque.Z];
+                        w = Bag_Analyzer.gf(msg_cell{i}, 'Wrench');
+                        f = Bag_Analyzer.gf(w, 'Force');
+                        t = Bag_Analyzer.gf(w, 'Torque');
+                        msg_data(:, i) = [Bag_Analyzer.gf(f,'X'); Bag_Analyzer.gf(f,'Y'); Bag_Analyzer.gf(f,'Z');
+                                        Bag_Analyzer.gf(t,'X'); Bag_Analyzer.gf(t,'Y'); Bag_Analyzer.gf(t,'Z')];
                     end
 
                 case 'vicon_bridge/Markers'
+                    % NOT fixed for ROS2 -- see the header comment above
+                    % extractData: custom message, no ROS2 equivalent found
+                    % to verify field names against.
                     [msg_data, obj.marker_dictionary] = marker_management(msg_cell, "skip_unknown", true);
 
                 case 'sensor_msgs/PointCloud'
                     % Preallocate based on the number of points in the first message
-                    n_points = length(msg_cell{1}.Points);
+                    n_points = length(Bag_Analyzer.gf(msg_cell{1}, 'Points'));
                     msg_data = zeros(n_points * 3, num_msgs);
 
                     for i = 1:num_msgs
-                        pts = msg_cell{i}.Points;
+                        pts = Bag_Analyzer.gf(msg_cell{i}, 'Points');
                         points_pos = zeros(length(pts) * 3, 1);
 
                         for j = 1:length(pts)
                             idx = (j-1)*3 + 1;
-                            points_pos(idx:idx+2) = [pts(j).X; pts(j).Y; pts(j).Z];
+                            points_pos(idx:idx+2) = [Bag_Analyzer.gf(pts(j),'X'); Bag_Analyzer.gf(pts(j),'Y'); Bag_Analyzer.gf(pts(j),'Z')];
                         end
 
                         % Handle potential size mismatches safely if N points changes over time
@@ -253,6 +288,9 @@ classdef Bag_Analyzer < handle
                     end
 
                 case 'dynamic_manipulation_dlo/MarkerRigidBodyPoses'
+                    % NOT fixed for ROS2 -- see the header comment above
+                    % extractData: custom message, no ROS2 equivalent found
+                    % to verify field names against.
                     msg_data = zeros(7, num_msgs);
                     vicon_format_markers = cell(1, num_msgs); % Preallocate cell array
 
@@ -322,6 +360,29 @@ classdef Bag_Analyzer < handle
 
                 % Guard against empty topics
                 if isempty(msg_cell)
+                    obj.msg_type{i} = '';
+                    obj.n_msgs(i) = 0;
+                    obj.topics_ts{i} = struct('Time', [], 'Data', []);
+                    continue;
+                end
+
+                % CONFIRMED against a real ROS2 bag (probe_real_bag_e2e.m):
+                % for a message type MATLAB doesn't recognize (a custom ROS2
+                % message with no ros2genmsg-generated definition on the
+                % path, e.g. candle_ros2/TrackedMarkerArray,
+                % mocap_optitrack_interfaces/MarkerArray), readMessages does
+                % NOT throw -- it emits a "not a recognized custom message"
+                % warning and returns a non-empty cell whose elements are
+                % empty doubles instead of structs. msg_cell{1}.MessageType
+                % below would then crash with "Dot indexing is not
+                % supported for variables of this type", killing the WHOLE
+                % bag analysis on one unsupported topic. Skip just that
+                % topic instead.
+                if ~isstruct(msg_cell{1})
+                    warning('Bag_Analyzer:UnrecognizedMessageType', ...
+                        ['Topic "%s": MATLAB could not decode this message type ' ...
+                         '(likely a custom message needing ros2genmsg). Skipping this topic.'], ...
+                        obj.topic_names{i});
                     obj.msg_type{i} = '';
                     obj.n_msgs(i) = 0;
                     obj.topics_ts{i} = struct('Time', [], 'Data', []);
@@ -520,9 +581,15 @@ classdef Bag_Analyzer < handle
             % method (no dependency on a live Bag_Analyzer instance / bag
             % object) so it can be exercised directly by
             % tests/test_bag_format_detection.m with a synthetic message
-            % struct -- including a synthetic ROS2-shaped one, since the
-            % struct field layout for this message type is identical
-            % between ROS1 and ROS2 DataFormat='struct' output.
+            % struct.
+            %
+            % Field naming is NOT actually identical between ROS1 and ROS2
+            % (contrary to what this comment used to claim): ROS1 uses
+            % Pose.Position.X, ROS2 uses pose.position.x. Bag_Analyzer.gf()
+            % handles both -- VERIFIED via a real ROS2 bag's
+            % visualization_msgs/Marker.pose.position/.orientation nested
+            % struct (see inspect_real_ros2_bag.m), which follows the same
+            % pattern as PoseStamped's Pose field.
             %
             % msg_cell        : cell array of PoseStamped structs
             % quaternion_order: "wxyz" or "xyzw"
@@ -530,14 +597,51 @@ classdef Bag_Analyzer < handle
             msg_data = zeros(7, num_msgs); % 3 for pos + 4 for quat
 
             for i = 1:num_msgs
+                pose = Bag_Analyzer.gf(msg_cell{i}, 'Pose');
+                pos  = Bag_Analyzer.gf(pose, 'Position');
+                ori  = Bag_Analyzer.gf(pose, 'Orientation');
                 if quaternion_order == "wxyz"
-                    msg_data(:, i) = [msg_cell{i}.Pose.Position.X; msg_cell{i}.Pose.Position.Y; msg_cell{i}.Pose.Position.Z;
-                                    msg_cell{i}.Pose.Orientation.W; msg_cell{i}.Pose.Orientation.X; msg_cell{i}.Pose.Orientation.Y; msg_cell{i}.Pose.Orientation.Z];
+                    msg_data(:, i) = [Bag_Analyzer.gf(pos,'X'); Bag_Analyzer.gf(pos,'Y'); Bag_Analyzer.gf(pos,'Z');
+                                    Bag_Analyzer.gf(ori,'W'); Bag_Analyzer.gf(ori,'X'); Bag_Analyzer.gf(ori,'Y'); Bag_Analyzer.gf(ori,'Z')];
                 elseif quaternion_order == "xyzw"
-                    msg_data(:, i) = [msg_cell{i}.Pose.Position.X; msg_cell{i}.Pose.Position.Y; msg_cell{i}.Pose.Position.Z;
-                                    msg_cell{i}.Pose.Orientation.X; msg_cell{i}.Pose.Orientation.Y; msg_cell{i}.Pose.Orientation.Z; msg_cell{i}.Pose.Orientation.W];
+                    msg_data(:, i) = [Bag_Analyzer.gf(pos,'X'); Bag_Analyzer.gf(pos,'Y'); Bag_Analyzer.gf(pos,'Z');
+                                    Bag_Analyzer.gf(ori,'X'); Bag_Analyzer.gf(ori,'Y'); Bag_Analyzer.gf(ori,'Z'); Bag_Analyzer.gf(ori,'W')];
                 end
             end
+        end
+    end
+
+    methods (Static)
+        function v = gf(s, ros1_name)
+            % GF Dual-case struct field accessor: ROS1 PascalCase vs ROS2's
+            % lower-first-letter convention for the same single-word field.
+            %
+            % v = Bag_Analyzer.gf(s, 'Position') returns s.Position if that
+            % field exists (ROS1 struct), otherwise s.position (ROS2
+            % struct, first letter lowercased -- NOT full snake_case, which
+            % does not apply to the single-word fields this is used for:
+            % Position, Orientation, Translation, Rotation, Force, Torque,
+            % Data, Point, Points, Transform, Wrench, X, Y, Z, W, ...).
+            %
+            % VERIFIED against a real ROS2 bag for Data (std_msgs/
+            % Float64MultiArray) and Position/Velocity/Effort (sensor_msgs/
+            % JointState); the rest follow the same rule per the public
+            % ROS2 message interface definitions (see extractData's header
+            % comment for exactly which). Do NOT use this for multi-word
+            % custom-message fields (e.g. MarkerIds) without separately
+            % confirming they don't instead use full snake_case.
+            if isfield(s, ros1_name)
+                v = s.(ros1_name);
+                return
+            end
+            ros2_name = [lower(ros1_name(1)), ros1_name(2:end)];
+            if isfield(s, ros2_name)
+                v = s.(ros2_name);
+                return
+            end
+            error('Bag_Analyzer:FieldNotFound', ...
+                'Neither field "%s" nor "%s" found on this message struct (fields: %s).', ...
+                ros1_name, ros2_name, strjoin(fieldnames(s), ', '));
         end
     end
 

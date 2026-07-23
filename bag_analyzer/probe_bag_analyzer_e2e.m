@@ -1,15 +1,13 @@
 %PROBE_BAG_ANALYZER_E2E End-to-end smoke test of Bag_Analyzer against a
-% synthetic ROS2 bag: confirms the constructor + extractMsgs pipeline
-% (dispatch points 1-5: open/time/topics/select+readMessages/timestamps)
-% runs without error after the readMessages dispatch fix.
+% synthetic ROS2 bag: confirms the constructor + extractMsgs + extractData
+% pipeline runs without error and decodes PoseStamped correctly.
 %
-% EXPECTED RESULT (as of this commit): [FAIL] Bag_Analyzer(bag_dir) threw:
-% Unrecognized field name "Pose". This is not a bug in this probe -- it is
-% the CONFIRMED extractData field-case gap documented at the top of
-% Bag_Analyzer.extractData (ROS2 struct fields are lowercase, e.g.
-% pose.position.x, not Pose.Position.X). Requires ODO/PR-scoped work to
-% fix; this script exists to make the gap reproducible and re-checkable
-% once that fix lands (it should then print [PASS] and the decoded data).
+% EXPECTED RESULT (as of this commit): [PASS], with decoded data
+% [1;2;3;0.7071;0;0;0] in both columns (matching the two identical
+% messages written below). This used to [FAIL] with "Unrecognized field
+% name 'Pose'" -- see Bag_Analyzer.gf() and extractData's header comment
+% for the fix (also verified against a real ROS2 bag, see
+% inspect_real_ros2_bag.m / verify_field_case_fix.m).
 
 tmp_root = fullfile(tempdir, "ros2_e2e_" + string(datetime("now"), "yyyyMMdd_HHmmssSSS"));
 bag_dir = fullfile(tmp_root, "e2e_bag");
@@ -27,7 +25,7 @@ clear writer;
 try
     ba = Bag_Analyzer(bag_dir);
     fprintf("[PASS] Bag_Analyzer(bag_dir) constructed without error. n_topics=%d\n", ba.n_topics);
-    fprintf("       topics_ts{1}.Data (PoseStamped decode, expect WRONG per flagged gap):\n");
+    fprintf("       topics_ts{1}.Data (PoseStamped decode, expect [1;2;3;0.7071;0;0;0] per column):\n");
     disp(ba.topics_ts{1}.Data);
 catch ME
     fprintf("[FAIL] Bag_Analyzer(bag_dir) threw: %s\n", ME.message);

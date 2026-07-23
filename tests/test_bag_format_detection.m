@@ -95,12 +95,15 @@ catch
     n_pass = n_pass + 1;
 end
 
-%% ---- (b) decodePoseStamped: synthetic ROS2-shaped struct message --------
+%% ---- (b) decodePoseStamped: ROS1-shaped (PascalCase) struct message -----
 
-% Synthetic geometry_msgs/PoseStamped message in the DataFormat='struct'
-% shape. This layout is unified by MATLAB's ROS Toolbox between ROS 1 and
-% ROS 2, so this fixture is representative of both -- it specifically
-% stands in for a ROS 2 bag's decoded struct here.
+% Synthetic geometry_msgs/PoseStamped message in ROS1's PascalCase struct
+% shape (Pose.Position.X, ...). NOTE: this layout is NOT actually
+% identical between ROS1 and ROS2 -- a real ROS2 bag's struct output uses
+% lowercase field names instead (pose.position.x), confirmed against a
+% real ROS2 bag (see Bag_Analyzer.gf() and its callers). This fixture
+% exercises the ROS1 branch of Bag_Analyzer.gf()'s dual-case lookup; the
+% ROS2 branch is exercised separately below.
 msg.MessageType = 'geometry_msgs/PoseStamped';
 msg.Pose.Position.X = 1.0;
 msg.Pose.Position.Y = 2.0;
@@ -116,12 +119,57 @@ expected_wxyz = [1.0; 2.0; 3.0; 0.7071; 0.0; 0.7071; 0.0];
 expected_xyzw = [1.0; 2.0; 3.0; 0.0; 0.7071; 0.0; 0.7071];
 
 result_wxyz = Bag_Analyzer.decodePoseStamped(msg_cell, "wxyz");
-[n_pass, n_fail] = check(n_pass, n_fail, 'decodePoseStamped wxyz order', ...
+[n_pass, n_fail] = check(n_pass, n_fail, 'decodePoseStamped (ROS1 PascalCase) wxyz order', ...
     isequal(result_wxyz, expected_wxyz), true);
 
 result_xyzw = Bag_Analyzer.decodePoseStamped(msg_cell, "xyzw");
-[n_pass, n_fail] = check(n_pass, n_fail, 'decodePoseStamped xyzw order', ...
+[n_pass, n_fail] = check(n_pass, n_fail, 'decodePoseStamped (ROS1 PascalCase) xyzw order', ...
     isequal(result_xyzw, expected_xyzw), true);
+
+%% ---- (c) decodePoseStamped: ROS2-shaped (lowercase) struct message ------
+
+% Same message, but with the field-name layout a REAL ROS2 bag actually
+% produces (verified: rosbag2matlab/bags/ros2bags/
+% collocated_cycle_2026_06_26-19_09_51/, see inspect_real_ros2_bag.m).
+% Exercises Bag_Analyzer.gf()'s ROS2 fallback branch.
+msg_ros2.MessageType = 'geometry_msgs/PoseStamped';
+msg_ros2.pose.position.x = 1.0;
+msg_ros2.pose.position.y = 2.0;
+msg_ros2.pose.position.z = 3.0;
+msg_ros2.pose.orientation.w = 0.7071;
+msg_ros2.pose.orientation.x = 0.0;
+msg_ros2.pose.orientation.y = 0.7071;
+msg_ros2.pose.orientation.z = 0.0;
+
+msg_cell_ros2 = {msg_ros2};
+
+result_wxyz_ros2 = Bag_Analyzer.decodePoseStamped(msg_cell_ros2, "wxyz");
+[n_pass, n_fail] = check(n_pass, n_fail, 'decodePoseStamped (ROS2 lowercase) wxyz order', ...
+    isequal(result_wxyz_ros2, expected_wxyz), true);
+
+result_xyzw_ros2 = Bag_Analyzer.decodePoseStamped(msg_cell_ros2, "xyzw");
+[n_pass, n_fail] = check(n_pass, n_fail, 'decodePoseStamped (ROS2 lowercase) xyzw order', ...
+    isequal(result_xyzw_ros2, expected_xyzw), true);
+
+%% ---- (d) Bag_Analyzer.gf(): dual-case field accessor ---------------------
+
+s1.Position = 42;
+s2.position = 42;
+s3.SomethingElse = 1;
+
+[n_pass, n_fail] = check(n_pass, n_fail, 'gf() finds ROS1 PascalCase field', ...
+    Bag_Analyzer.gf(s1, 'Position'), 42);
+[n_pass, n_fail] = check(n_pass, n_fail, 'gf() falls back to ROS2 lowercase field', ...
+    Bag_Analyzer.gf(s2, 'Position'), 42);
+
+try
+    Bag_Analyzer.gf(s3, 'Position');
+    fprintf('[FAIL] gf() should error when neither field variant exists\n');
+    n_fail = n_fail + 1;
+catch
+    fprintf('[PASS] gf() correctly errors when neither field variant exists\n');
+    n_pass = n_pass + 1;
+end
 
 %% ---- Summary --------------------------------------------------------------
 fprintf('\n%d passed, %d failed\n', n_pass, n_fail);
