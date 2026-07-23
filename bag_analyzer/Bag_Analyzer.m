@@ -55,11 +55,11 @@ classdef Bag_Analyzer < handle
                 case "ros1"
                     obj.bag_obj = rosbag(bag_name);
                 case "ros2"
-                    % ASSUMPTION (unverified without a MATLAB + ROS 2
-                    % Toolbox install): ros2bagreader() takes the bag
-                    % FOLDER path (containing metadata.yaml) exactly like
-                    % rosbag() takes a .bag file, and exposes the same
-                    % StartTime/EndTime/AvailableTopics surface used below.
+                    % VERIFIED (probe_ros2_assumptions.m, synthetic
+                    % ros2bagwriter-produced bag): ros2bagreader() takes
+                    % the bag FOLDER path (containing metadata.yaml) and
+                    % exposes StartTime/EndTime/AvailableTopics with the
+                    % same shapes used below.
                     obj.bag_obj = ros2bagreader(bag_name);
             end
 
@@ -68,23 +68,18 @@ classdef Bag_Analyzer < handle
             obj.use_parallel = options.use_parallel;
 
             % --- DISPATCH POINT 2: time information -------------------------
-            % Both rosbag (ROS1) and ros2bagreader (ROS2) expose StartTime /
-            % EndTime as numeric seconds, so no format branch is needed here
-            % -- but route through to_seconds() as a defensive normalizer in
-            % case the ROS2 reader ever returns duration/datetime instead of
-            % a plain double (ASSUMPTION: not verifiable without MATLAB).
+            % VERIFIED (probe_ros2_assumptions.m): both rosbag (ROS1) and
+            % ros2bagreader (ROS2) expose StartTime/EndTime as plain double
+            % seconds, so no format branch is needed here -- to_seconds()
+            % is kept as a defensive normalizer regardless.
             obj.start_time = Bag_Analyzer.to_seconds(obj.bag_obj.StartTime);
             obj.end_time = Bag_Analyzer.to_seconds(obj.bag_obj.EndTime);
             obj.bag_duration = obj.end_time - obj.start_time;
 
             % --- DISPATCH POINT 3: topic list --------------------------------
-            % rosbag's BagSelection exposes AvailableTopics as a table whose
-            % row names are the topic names (ROS1: bag.AvailableTopics.Row).
-            % ASSUMPTION (unverified without a MATLAB + ROS 2 Toolbox
-            % install): ros2bagreader exposes an AvailableTopics table with
-            % the same Row/Topic shape, per the ROS Toolbox documentation's
-            % description of the two readers as API-parallel. If this turns
-            % out to differ, isolate the ROS2 case behind obj.bag_format here.
+            % VERIFIED (probe_ros2_assumptions.m): ros2bagreader's
+            % AvailableTopics table exposes the same Row-is-topic-names
+            % shape as ROS1's rosbag/BagSelection.AvailableTopics.
             obj.topic_names = obj.bag_obj.AvailableTopics.Row';
             obj.n_topics = length(obj.topic_names);
 
@@ -96,6 +91,27 @@ classdef Bag_Analyzer < handle
         end
 
         function msg_data = extractData(obj, msg_cell)
+            % CONFIRMED CRASH for ROS2 (probe_bag_analyzer_e2e.m, synthetic
+            % ros2bagwriter bag): every case below that reaches into
+            % message sub-fields (Pose.Position.X, Transform.Translation.X,
+            % Wrench.Force.X, Position/Velocity/Effort, Point.X, ...)
+            % assumes ROS1's PascalCase struct field naming. A real ROS2
+            % bag's struct output uses lowercase field names instead
+            % (verified: geometry_msgs/PoseStamped decodes to
+            % msg.pose.position.x, not msg.Pose.Position.X -- only the
+            % MATLAB-injected MessageType field stays capitalized). This is
+            % not silently-wrong data: end-to-end Bag_Analyzer(ros2_bag_dir)
+            % throws "Unrecognized field name 'Pose'" the moment a
+            % PoseStamped (or any other structured) message is decoded.
+            % This was NOT one of the originally flagged dispatch points
+            % and is NOT fixed here: it needs a field-case dispatch (or a
+            % case-insensitive accessor) added to every branch below, plus
+            % real ROS2 messages of each type to confirm field names beyond
+            % PoseStamped. Dispatch points 1-5 in the constructor/
+            % extractMsgs (bag open, time, topic list, select/readMessages,
+            % timestamps) are ROS2-correct and verified; this switch is
+            % not -- ROS2 bags will currently crash on their first
+            % structured message.
             % Init
             num_msgs = length(msg_cell);
             if num_msgs == 0
@@ -285,17 +301,24 @@ classdef Bag_Analyzer < handle
         function extractMsgs(obj)
             for i = 1:obj.n_topics
                 % --- DISPATCH POINT 4: topic selection + message read -------
-                % select(...,'Topic',...) and readMessages(...,'DataFormat',
-                % 'struct') are documented by the ROS Toolbox to work on
-                % both the ROS1 BagSelection and the ROS2 reader/selection
-                % object with identical syntax, so no format branch is
-                % needed here for either obj.bag_format value.
-                % ASSUMPTION (unverified without MATLAB + ROS 2 Toolbox):
-                % the ROS2 selection object returned by select() supports
-                % the same readMessages(...,'DataFormat','struct') call.
+                % select(...,'Topic',...) syntax is identical for both
+                % readers (VERIFIED, probe_ros2_assumptions.m).
+                % readMessages is NOT identical: CONFIRMED BUG (not just an
+                % assumption) -- ros2bagreader/readMessages has no
+                % 'DataFormat' parameter at all (its signature is only
+                % readMessages(bag) / readMessages(bag,rows)) and throws
+                % "Too many input arguments" if passed one. It always
+                % returns a cell array of structs by default, which is the
+                % struct format ROS1 needs 'DataFormat','struct' to opt
+                % into. Dispatch is required here.
                 topic_cell = select(obj.bag_obj, 'Topic', obj.topic_names{i});
                 % msgs
-                msg_cell = readMessages(topic_cell,'DataFormat','struct');
+                switch obj.bag_format
+                    case "ros1"
+                        msg_cell = readMessages(topic_cell,'DataFormat','struct');
+                    case "ros2"
+                        msg_cell = readMessages(topic_cell);
+                end
 
                 % Guard against empty topics
                 if isempty(msg_cell)
@@ -306,13 +329,10 @@ classdef Bag_Analyzer < handle
                 end
 
                 % --- DISPATCH POINT 5: message timestamps -------------------
-                % sel.MessageList.Time is documented as the same table/
-                % column shape for both ROS1 BagSelection and ROS2
-                % selection objects, so this subtraction is format-agnostic.
-                % ASSUMPTION (unverified without MATLAB + ROS 2 Toolbox):
-                % ROS2's MessageList.Time uses the same numeric-seconds
-                % units as ROS1's (both relative to obj.start_time, itself
-                % normalized via Bag_Analyzer.to_seconds above).
+                % VERIFIED (probe_ros2_assumptions.m): sel.MessageList.Time
+                % is a plain double column of seconds on the same basis as
+                % the reader's StartTime for both ROS1 and ROS2, so this
+                % subtraction is format-agnostic.
                 % Time
                 topic_time = topic_cell.MessageList.Time - obj.start_time;
                 % Type
