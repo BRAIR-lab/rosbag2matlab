@@ -6,6 +6,12 @@ classdef Bag_Analyzer < handle
         %% Bag Object
         bag_obj
 
+        %% Bag Format ("ros1" | "ros2") - see detect_bag_format.m.
+        % Set once in the constructor and used to dispatch the handful of
+        % call sites where the ROS 1 / ROS 2 reader APIs genuinely differ
+        % (currently: only how the reader object itself is opened).
+        bag_format
+
         %% Time Information
         start_time
         end_time
@@ -38,19 +44,47 @@ classdef Bag_Analyzer < handle
                 options.quaternion_order = "wxyz";
                 options.use_parallel = false;
             end
-            % Init Bag Object
-            obj.bag_obj = rosbag(bag_name);
+            % --- DISPATCH POINT 1: open the bag -----------------------------
+            % Detect ROS 1 (*.bag file) vs ROS 2 (bag directory) from the
+            % path itself, then open with the matching reader. Everything
+            % downstream (select/readMessages/MessageList/extractData) is
+            % shared and format-agnostic -- see the mapping notes at each
+            % remaining dispatch point below.
+            obj.bag_format = detect_bag_format(bag_name);
+            switch obj.bag_format
+                case "ros1"
+                    obj.bag_obj = rosbag(bag_name);
+                case "ros2"
+                    % ASSUMPTION (unverified without a MATLAB + ROS 2
+                    % Toolbox install): ros2bagreader() takes the bag
+                    % FOLDER path (containing metadata.yaml) exactly like
+                    % rosbag() takes a .bag file, and exposes the same
+                    % StartTime/EndTime/AvailableTopics surface used below.
+                    obj.bag_obj = ros2bagreader(bag_name);
+            end
 
             % Quaternion Order
             obj.quaternion_order = options.quaternion_order;
             obj.use_parallel = options.use_parallel;
 
-            % Time Information
-            obj.start_time = obj.bag_obj.StartTime;
-            obj.end_time = obj.bag_obj.EndTime;
+            % --- DISPATCH POINT 2: time information -------------------------
+            % Both rosbag (ROS1) and ros2bagreader (ROS2) expose StartTime /
+            % EndTime as numeric seconds, so no format branch is needed here
+            % -- but route through to_seconds() as a defensive normalizer in
+            % case the ROS2 reader ever returns duration/datetime instead of
+            % a plain double (ASSUMPTION: not verifiable without MATLAB).
+            obj.start_time = Bag_Analyzer.to_seconds(obj.bag_obj.StartTime);
+            obj.end_time = Bag_Analyzer.to_seconds(obj.bag_obj.EndTime);
             obj.bag_duration = obj.end_time - obj.start_time;
 
-            % Topics Info
+            % --- DISPATCH POINT 3: topic list --------------------------------
+            % rosbag's BagSelection exposes AvailableTopics as a table whose
+            % row names are the topic names (ROS1: bag.AvailableTopics.Row).
+            % ASSUMPTION (unverified without a MATLAB + ROS 2 Toolbox
+            % install): ros2bagreader exposes an AvailableTopics table with
+            % the same Row/Topic shape, per the ROS Toolbox documentation's
+            % description of the two readers as API-parallel. If this turns
+            % out to differ, isolate the ROS2 case behind obj.bag_format here.
             obj.topic_names = obj.bag_obj.AvailableTopics.Row';
             obj.n_topics = length(obj.topic_names);
 
@@ -126,17 +160,14 @@ classdef Bag_Analyzer < handle
                     end
 
                 case 'geometry_msgs/PoseStamped'
-                    msg_data = zeros(7, num_msgs); % 3 for pos + 4 for quat
-
-                    for i = 1:num_msgs
-                        if obj.quaternion_order == "wxyz"
-                            msg_data(:, i) = [msg_cell{i}.Pose.Position.X; msg_cell{i}.Pose.Position.Y; msg_cell{i}.Pose.Position.Z;
-                                            msg_cell{i}.Pose.Orientation.W; msg_cell{i}.Pose.Orientation.X; msg_cell{i}.Pose.Orientation.Y; msg_cell{i}.Pose.Orientation.Z];
-                        elseif obj.quaternion_order == "xyzw"
-                            msg_data(:, i) = [msg_cell{i}.Pose.Position.X; msg_cell{i}.Pose.Position.Y; msg_cell{i}.Pose.Position.Z;
-                                            msg_cell{i}.Pose.Orientation.X; msg_cell{i}.Pose.Orientation.Y; msg_cell{i}.Pose.Orientation.Z; msg_cell{i}.Pose.Orientation.W];
-                        end
-                    end
+                    % Message struct field layout for geometry_msgs/PoseStamped
+                    % is identical whether the struct came from a ROS1 or a
+                    % ROS2 bag (MATLAB's DataFormat='struct' output unifies
+                    % both), so the decode logic is shared. Factored into a
+                    % Static method so it can be unit-tested (see
+                    % tests/test_bag_format_detection.m) without needing a
+                    % live Bag_Analyzer instance / real bag file.
+                    msg_data = Bag_Analyzer.decodePoseStamped(msg_cell, obj.quaternion_order);
 
                 case 'geometry_msgs/TransformStamped'
                     msg_data = zeros(7, num_msgs);
@@ -253,7 +284,15 @@ classdef Bag_Analyzer < handle
         % Extract Topics & Msgs
         function extractMsgs(obj)
             for i = 1:obj.n_topics
-                % Topic
+                % --- DISPATCH POINT 4: topic selection + message read -------
+                % select(...,'Topic',...) and readMessages(...,'DataFormat',
+                % 'struct') are documented by the ROS Toolbox to work on
+                % both the ROS1 BagSelection and the ROS2 reader/selection
+                % object with identical syntax, so no format branch is
+                % needed here for either obj.bag_format value.
+                % ASSUMPTION (unverified without MATLAB + ROS 2 Toolbox):
+                % the ROS2 selection object returned by select() supports
+                % the same readMessages(...,'DataFormat','struct') call.
                 topic_cell = select(obj.bag_obj, 'Topic', obj.topic_names{i});
                 % msgs
                 msg_cell = readMessages(topic_cell,'DataFormat','struct');
@@ -266,6 +305,14 @@ classdef Bag_Analyzer < handle
                     continue;
                 end
 
+                % --- DISPATCH POINT 5: message timestamps -------------------
+                % sel.MessageList.Time is documented as the same table/
+                % column shape for both ROS1 BagSelection and ROS2
+                % selection objects, so this subtraction is format-agnostic.
+                % ASSUMPTION (unverified without MATLAB + ROS 2 Toolbox):
+                % ROS2's MessageList.Time uses the same numeric-seconds
+                % units as ROS1's (both relative to obj.start_time, itself
+                % normalized via Bag_Analyzer.to_seconds above).
                 % Time
                 topic_time = topic_cell.MessageList.Time - obj.start_time;
                 % Type
@@ -440,6 +487,53 @@ classdef Bag_Analyzer < handle
                         out(r, :) = interp1(src_time(valid), y(valid), ...
                                             query_time, method);
                 end
+            end
+        end
+    end
+
+    methods (Static)
+        function msg_data = decodePoseStamped(msg_cell, quaternion_order)
+            % Decode a cell array of geometry_msgs/PoseStamped struct
+            % messages (DataFormat='struct') into a 7xN [pos; quat] matrix.
+            %
+            % Pulled out of extractData's switch-case as a public Static
+            % method (no dependency on a live Bag_Analyzer instance / bag
+            % object) so it can be exercised directly by
+            % tests/test_bag_format_detection.m with a synthetic message
+            % struct -- including a synthetic ROS2-shaped one, since the
+            % struct field layout for this message type is identical
+            % between ROS1 and ROS2 DataFormat='struct' output.
+            %
+            % msg_cell        : cell array of PoseStamped structs
+            % quaternion_order: "wxyz" or "xyzw"
+            num_msgs = length(msg_cell);
+            msg_data = zeros(7, num_msgs); % 3 for pos + 4 for quat
+
+            for i = 1:num_msgs
+                if quaternion_order == "wxyz"
+                    msg_data(:, i) = [msg_cell{i}.Pose.Position.X; msg_cell{i}.Pose.Position.Y; msg_cell{i}.Pose.Position.Z;
+                                    msg_cell{i}.Pose.Orientation.W; msg_cell{i}.Pose.Orientation.X; msg_cell{i}.Pose.Orientation.Y; msg_cell{i}.Pose.Orientation.Z];
+                elseif quaternion_order == "xyzw"
+                    msg_data(:, i) = [msg_cell{i}.Pose.Position.X; msg_cell{i}.Pose.Position.Y; msg_cell{i}.Pose.Position.Z;
+                                    msg_cell{i}.Pose.Orientation.X; msg_cell{i}.Pose.Orientation.Y; msg_cell{i}.Pose.Orientation.Z; msg_cell{i}.Pose.Orientation.W];
+                end
+            end
+        end
+    end
+
+    methods (Static, Access = private)
+        function t = to_seconds(val)
+            % Normalize a bag StartTime/EndTime value to a plain numeric
+            % scalar in seconds, regardless of whether the underlying
+            % reader returned a double (ROS1's documented behavior), or a
+            % duration/datetime (defensive: unverified for ROS2's
+            % ros2bagreader without a MATLAB + ROS 2 Toolbox install).
+            if isduration(val)
+                t = seconds(val);
+            elseif isdatetime(val)
+                t = posixtime(val);
+            else
+                t = double(val);
             end
         end
     end
