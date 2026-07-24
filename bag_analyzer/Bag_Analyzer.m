@@ -330,6 +330,205 @@ classdef Bag_Analyzer < handle
                                                                         "replace_style", 'delete', "preserve_order", true);
                     end
 
+                case 'candle_ros2/TrackedMarkerArray'
+                    % Field names per candle_ros2/msg/TrackedMarkerArray.msg
+                    % + TrackedMarker.msg (docs/ros2_custom_messages.md in
+                    % the superproject): top-level 'markers' and per-marker
+                    % 'id'/'position'/'velocity' are ROS2-only (no ROS1
+                    % PascalCase original), accessed directly by their .msg
+                    % snake_case spelling -- NOT yet runtime-verified
+                    % against a decoded message, since this MATLAB install
+                    % has no ros2genmsg registration for candle_ros2 (see
+                    % inspect_real_ros2_bag.m: /filtered_markers is
+                    % currently skipped entirely by readMessages before it
+                    % ever reaches extractData). The nested position/
+                    % velocity Point/Vector3 .X/.Y/.Z leaves ARE the
+                    % already-verified single-word ROS2 convention, so those
+                    % go through gf().
+                    %
+                    % Routed through marker_management() (the same "vicon
+                    % format" pipeline as the dynamic_manipulation_dlo case
+                    % above) rather than a raw numeric array, so downstream
+                    % consumers (synchronization, obj.marker_dictionary) see
+                    % a consistent marker representation regardless of which
+                    % bag format/message type produced it. TrackedMarker's
+                    % `velocity` field has no slot in the vicon Markers_
+                    % format (Occluded/SubjectName/MarkerName/Translation
+                    % only) and is DROPPED here -- flagged in case the user
+                    % wants filtered marker velocities preserved separately
+                    % (e.g. as their own topic/array) rather than discarded.
+                    %
+                    % Units: geometry_msgs/Point position is meters (ROS
+                    % convention, matches the plain /xd_tip, /xd_m1..3
+                    % Point topics in the same bag). marker_management
+                    % divides Translation by 1000 to produce meters in
+                    % msg_data (it expects vicon-style mm input, see its
+                    % Step 3), so multiply by 1000 here to round-trip back
+                    % to the original meters -- same convention the
+                    % dynamic_manipulation_dlo case above already uses.
+                    vicon_format_markers = cell(1, num_msgs);
+
+                    for i = 1:num_msgs
+                        markers = msg_cell{i}.markers;
+                        n_markers_i = length(markers);
+                        vicon_format_markers{i}.Markers_ = repmat(struct('Occluded', 0, 'SubjectName', '', 'MarkerName', '', 'Translation', struct('X', 0, 'Y', 0, 'Z', 0)), 1, n_markers_i);
+
+                        for j = 1:n_markers_i
+                            mk  = markers(j);
+                            pos = mk.position; % geometry_msgs/Point, direct access (ROS2-only field)
+                            vicon_format_markers{i}.Markers_(j).Occluded = 0;
+                            vicon_format_markers{i}.Markers_(j).SubjectName = '';
+                            vicon_format_markers{i}.Markers_(j).MarkerName = "marker_" + double(mk.id);
+                            vicon_format_markers{i}.Markers_(j).Translation.X = Bag_Analyzer.gf(pos, 'X') * 1000;
+                            vicon_format_markers{i}.Markers_(j).Translation.Y = Bag_Analyzer.gf(pos, 'Y') * 1000;
+                            vicon_format_markers{i}.Markers_(j).Translation.Z = Bag_Analyzer.gf(pos, 'Z') * 1000;
+                        end
+                    end
+
+                    [msg_data, obj.marker_dictionary] = marker_management(vicon_format_markers, "skip_unknown", true, ...
+                                                                        "replace_style", 'delete', "preserve_order", true);
+
+                case 'mocap_optitrack_interfaces/MarkerArray'
+                    % Field names per mocap_optitrack_interfaces/msg/
+                    % MarkerArray.msg + Marker.msg (docs/
+                    % ros2_custom_messages.md in the superproject):
+                    % top-level 'markers' and per-marker 'id'/'position' are
+                    % ROS2-only, accessed directly by their .msg snake_case
+                    % spelling -- NOT yet runtime-verified (see the
+                    % TrackedMarkerArray case above for why: readMessages
+                    % currently skips /mocap_markers entirely in this
+                    % install, no ros2genmsg registration for
+                    % mocap_optitrack_interfaces). Nested position .X/.Y/.Z
+                    % leaves ARE the already-verified single-word ROS2
+                    % convention, so those go through gf(). The `type`
+                    % field (string: Active/Labeled/Unlabeled) is
+                    % non-numeric and has no slot in the vicon Markers_
+                    % format -- dropped.
+                    %
+                    % Routed through marker_management() (same "vicon
+                    % format" pipeline as dynamic_manipulation_dlo /
+                    % TrackedMarkerArray above) so obj.marker_dictionary and
+                    % synchronization see a consistent representation.
+                    % Units: same meters -> *1000 -> marker_management
+                    % /1000 -> meters round trip as TrackedMarkerArray
+                    % above (geometry_msgs/Point is meters by ROS
+                    % convention; not yet numerically confirmed for this
+                    % specific topic since it can't be decoded in this
+                    % install).
+                    vicon_format_markers = cell(1, num_msgs);
+
+                    for i = 1:num_msgs
+                        markers = msg_cell{i}.markers;
+                        n_markers_i = length(markers);
+                        vicon_format_markers{i}.Markers_ = repmat(struct('Occluded', 0, 'SubjectName', '', 'MarkerName', '', 'Translation', struct('X', 0, 'Y', 0, 'Z', 0)), 1, n_markers_i);
+
+                        for j = 1:n_markers_i
+                            mk  = markers(j);
+                            pos = mk.position; % geometry_msgs/Point, direct access (ROS2-only field)
+                            vicon_format_markers{i}.Markers_(j).Occluded = 0;
+                            vicon_format_markers{i}.Markers_(j).SubjectName = '';
+                            vicon_format_markers{i}.Markers_(j).MarkerName = "marker_" + double(mk.id);
+                            vicon_format_markers{i}.Markers_(j).Translation.X = Bag_Analyzer.gf(pos, 'X') * 1000;
+                            vicon_format_markers{i}.Markers_(j).Translation.Y = Bag_Analyzer.gf(pos, 'Y') * 1000;
+                            vicon_format_markers{i}.Markers_(j).Translation.Z = Bag_Analyzer.gf(pos, 'Z') * 1000;
+                        end
+                    end
+
+                    [msg_data, obj.marker_dictionary] = marker_management(vicon_format_markers, "skip_unknown", true, ...
+                                                                        "replace_style", 'delete', "preserve_order", true);
+
+                case 'candle_ros2/MotionCommand'
+                    % Field names per candle_ros2/msg/MotionCommand.msg
+                    % (docs/ros2_custom_messages.md in the superproject) --
+                    % NOT yet runtime-verified against a decoded message:
+                    % this install has no ros2genmsg registration for
+                    % candle_ros2, so readMessages currently skips
+                    % /md80/motion_command entirely before it ever reaches
+                    % extractData (confirmed via inspect_real_ros2_bag.m).
+                    % ROS2-only message, no ROS1 PascalCase equivalent, so
+                    % fields are accessed directly by their .msg snake_case
+                    % spelling rather than through gf().
+                    %
+                    % drive_ids (uint32[]), target_position/target_velocity/
+                    % target_torque (float32[]), all length n_drives --
+                    % stacked vertically per message (JointState pattern),
+                    % preallocated from the first message's n_drives, guarded
+                    % with min() against a later message reporting a
+                    % different n_drives (PointCloud pattern) rather than
+                    % erroring.
+                    n_drives = length(msg_cell{1}.drive_ids);
+                    msg_data = zeros(4 * n_drives, num_msgs);
+
+                    for i = 1:num_msgs
+                        drive_ids       = double(msg_cell{i}.drive_ids(:));
+                        target_position = double(msg_cell{i}.target_position(:));
+                        target_velocity = double(msg_cell{i}.target_velocity(:));
+                        target_torque   = double(msg_cell{i}.target_torque(:));
+                        col = [drive_ids; target_position; target_velocity; target_torque];
+
+                        % Guard against a varying number of drives per message
+                        n = min(length(col), size(msg_data, 1));
+                        msg_data(1:n, i) = col(1:n);
+                    end
+
+                case 'mocap_optitrack_interfaces/RigidBodyArray'
+                    % Field names per mocap_optitrack_interfaces/msg/
+                    % RigidBodyArray.msg + RigidBody.msg (docs/
+                    % ros2_custom_messages.md in the superproject):
+                    % top-level 'rigid_bodies' and per-body 'id'/'valid'/
+                    % 'mean_error'/'pose_stamped' are ROS2-only, accessed
+                    % directly by their .msg snake_case spelling -- NOT yet
+                    % runtime-verified (readMessages currently skips
+                    % /mocap_rigid_bodies entirely in this install, no
+                    % ros2genmsg registration for mocap_optitrack_interfaces).
+                    % This is rigid-body POSE data (numeric), not markers --
+                    % same shape as the RigidBodyPose half of the
+                    % dynamic_manipulation_dlo case above, not the marker
+                    % half. pose_stamped is a full geometry_msgs/PoseStamped
+                    % sub-struct, so its internal pose.position/.orientation
+                    % nesting and .X/.Y/.Z/.W leaves ARE the already-verified
+                    % single-word ROS2 convention (same pattern as
+                    % Bag_Analyzer.decodePoseStamped) and go through gf().
+                    % Quaternion order honors obj.quaternion_order exactly
+                    % like the geometry_msgs/PoseStamped / dynamic_manipulation
+                    % cases.
+                    %
+                    % 10 rows per body: [id; valid(0/1); mean_error;
+                    % pos.x; pos.y; pos.z; quat(4)], preallocated from the
+                    % first message's rigid-body count, guarded with min()
+                    % against a later message reporting a different count
+                    % (PointCloud pattern).
+                    n_bodies = length(msg_cell{1}.rigid_bodies);
+                    msg_data = zeros(10 * n_bodies, num_msgs);
+
+                    for i = 1:num_msgs
+                        bodies = msg_cell{i}.rigid_bodies;
+                        n_bodies_i = length(bodies);
+                        col = zeros(10 * n_bodies_i, 1);
+
+                        for j = 1:n_bodies_i
+                            b    = bodies(j);
+                            pose = Bag_Analyzer.gf(b.pose_stamped, 'Pose');
+                            pos  = Bag_Analyzer.gf(pose, 'Position');
+                            ori  = Bag_Analyzer.gf(pose, 'Orientation');
+
+                            if obj.quaternion_order == "wxyz"
+                                quat = [Bag_Analyzer.gf(ori,'W'); Bag_Analyzer.gf(ori,'X'); Bag_Analyzer.gf(ori,'Y'); Bag_Analyzer.gf(ori,'Z')];
+                            else % "xyzw"
+                                quat = [Bag_Analyzer.gf(ori,'X'); Bag_Analyzer.gf(ori,'Y'); Bag_Analyzer.gf(ori,'Z'); Bag_Analyzer.gf(ori,'W')];
+                            end
+
+                            idx = (j-1)*10 + 1;
+                            col(idx:idx+9) = [double(b.id); double(b.valid); double(b.mean_error); ...
+                                               Bag_Analyzer.gf(pos,'X'); Bag_Analyzer.gf(pos,'Y'); Bag_Analyzer.gf(pos,'Z'); ...
+                                               quat];
+                        end
+
+                        % Guard against a varying number of rigid bodies per message
+                        n_rows = min(length(col), size(msg_data, 1));
+                        msg_data(1:n_rows, i) = col(1:n_rows);
+                    end
+
                 otherwise
                     msg_data = msg_cell;
             end
