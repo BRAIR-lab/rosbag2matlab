@@ -336,12 +336,11 @@ classdef Bag_Analyzer < handle
                     % the superproject): top-level 'markers' and per-marker
                     % 'id'/'position'/'velocity' are ROS2-only (no ROS1
                     % PascalCase original), accessed directly by their .msg
-                    % snake_case spelling -- NOT yet runtime-verified
-                    % against a decoded message, since this MATLAB install
-                    % has no ros2genmsg registration for candle_ros2 (see
-                    % inspect_real_ros2_bag.m: /filtered_markers is
-                    % currently skipped entirely by readMessages before it
-                    % ever reaches extractData). The nested position/
+                    % snake_case spelling -- VERIFIED via ros2genmsg:
+                    % ros2message('candle_ros2/TrackedMarkerArray') exposes
+                    % header/markers, and TrackedMarker exposes
+                    % id/position/velocity, exactly as accessed here. The
+                    % nested position/
                     % velocity Point/Vector3 .X/.Y/.Z leaves ARE the
                     % already-verified single-word ROS2 convention, so those
                     % go through gf().
@@ -394,11 +393,10 @@ classdef Bag_Analyzer < handle
                     % ros2_custom_messages.md in the superproject):
                     % top-level 'markers' and per-marker 'id'/'position' are
                     % ROS2-only, accessed directly by their .msg snake_case
-                    % spelling -- NOT yet runtime-verified (see the
-                    % TrackedMarkerArray case above for why: readMessages
-                    % currently skips /mocap_markers entirely in this
-                    % install, no ros2genmsg registration for
-                    % mocap_optitrack_interfaces). Nested position .X/.Y/.Z
+                    % spelling -- VERIFIED via ros2genmsg:
+                    % ros2message('mocap_optitrack_interfaces/Marker') exposes
+                    % position/id/type, exactly as accessed here (the string
+                    % 'type' field is dropped below). Nested position .X/.Y/.Z
                     % leaves ARE the already-verified single-word ROS2
                     % convention, so those go through gf(). The `type`
                     % field (string: Active/Labeled/Unlabeled) is
@@ -440,11 +438,10 @@ classdef Bag_Analyzer < handle
                 case 'candle_ros2/MotionCommand'
                     % Field names per candle_ros2/msg/MotionCommand.msg
                     % (docs/ros2_custom_messages.md in the superproject) --
-                    % NOT yet runtime-verified against a decoded message:
-                    % this install has no ros2genmsg registration for
-                    % candle_ros2, so readMessages currently skips
-                    % /md80/motion_command entirely before it ever reaches
-                    % extractData (confirmed via inspect_real_ros2_bag.m).
+                    % VERIFIED via ros2genmsg: ros2message(
+                    % 'candle_ros2/MotionCommand') exposes drive_ids,
+                    % target_position, target_velocity, target_torque,
+                    % exactly as accessed here.
                     % ROS2-only message, no ROS1 PascalCase equivalent, so
                     % fields are accessed directly by their .msg snake_case
                     % spelling rather than through gf().
@@ -477,10 +474,10 @@ classdef Bag_Analyzer < handle
                     % ros2_custom_messages.md in the superproject):
                     % top-level 'rigid_bodies' and per-body 'id'/'valid'/
                     % 'mean_error'/'pose_stamped' are ROS2-only, accessed
-                    % directly by their .msg snake_case spelling -- NOT yet
-                    % runtime-verified (readMessages currently skips
-                    % /mocap_rigid_bodies entirely in this install, no
-                    % ros2genmsg registration for mocap_optitrack_interfaces).
+                    % directly by their .msg snake_case spelling -- VERIFIED
+                    % via ros2genmsg: ros2message(
+                    % 'mocap_optitrack_interfaces/RigidBody') exposes
+                    % header/id/valid/mean_error/pose_stamped, as accessed here.
                     % This is rigid-body POSE data (numeric), not markers --
                     % same shape as the RigidBodyPose half of the
                     % dynamic_manipulation_dlo case above, not the marker
