@@ -228,6 +228,33 @@ classdef Bag_Analyzer < handle
                         msg_data(:, i) = [Bag_Analyzer.gf(pt,'X'); Bag_Analyzer.gf(pt,'Y'); Bag_Analyzer.gf(pt,'Z')];
                     end
 
+                case 'geometry_msgs/Point'
+                    % Bare, UNSTAMPED Point: x/y/z sit directly on the message
+                    % struct, with no nested 'Point' field and no Header --
+                    % unlike PointStamped above. Being header-less is not a
+                    % problem here: timestamps come from the bag's
+                    % MessageList.Time (see DISPATCH POINT 5 in extractMsgs),
+                    % never from a message header, which is the same reason
+                    % the equally header-less std_msgs/Float64MultiArray works.
+                    %
+                    % Added for the tentacle experiments' desired-marker
+                    % topics (/xd_m1, /xd_m2, /xd_m3, /xd_tip). Before this
+                    % case existed they fell through to `otherwise`, which
+                    % returns the raw msg_cell and so silently dropped them
+                    % from every extracted .mat file.
+                    %
+                    % Units: geometry_msgs/Point is meters by ROS convention
+                    % and is passed through unscaled, matching the /1000 ->
+                    % meters normalization the marker topics apply, so these
+                    % are directly comparable to /filtered_markers.
+                    msg_data = zeros(3, num_msgs);
+
+                    for i = 1:num_msgs
+                        msg_data(:, i) = [Bag_Analyzer.gf(msg_cell{i},'X'); ...
+                                          Bag_Analyzer.gf(msg_cell{i},'Y'); ...
+                                          Bag_Analyzer.gf(msg_cell{i},'Z')];
+                    end
+
                 case 'geometry_msgs/WrenchStamped'
                     % Field names per the public ROS2 geometry_msgs/Wrench
                     % interface definition (force/torque, not Force/Torque).
